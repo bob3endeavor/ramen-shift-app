@@ -1,0 +1,10 @@
+{
+  // Live Server 的 port 若被佔用會自動往上跳（5501、5502…），
+  // 那樣 origin 就跟 Google OAuth 註冊的對不上，登入會失敗。
+  // 這裡固定成 127.0.0.1:5500，跟 docs/DEPLOY.md A-4 註冊的來源一致。
+  "liveServer.settings.host": "127.0.0.1",
+  "liveServer.settings.port": 5500,
+
+  // 把根目錄指到 frontend/，開啟後就是 http://127.0.0.1:5500/index.html
+  "liveServer.settings.root": "/frontend"
+}

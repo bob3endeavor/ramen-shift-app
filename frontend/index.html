@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Ming Ramen Bar｜排班意願申請</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<div class="phone">
+  <div class="noren">
+    <span class="demo-badge" id="demoBadge" style="display:none;">DEMO</span>
+    <p class="eyebrow">MING RAMEN BAR ・ 員工專用</p>
+    <h1>排班意願申請</h1>
+    <p>點選送出，直接反映到班表</p>
+  </div>
+
+  <div id="syncBanner" class="sync-banner"></div>
+
+  <!-- ============ GATE A: 未登入 ============ -->
+  <div class="gate" id="authGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">STEP 00</p>
+      <h2>請先登入</h2>
+      <p class="gate-text">
+        使用你的 Google 帳號登入，系統會自動對應到你的員工姓名，
+        之後只會顯示與你相關的班表。
+      </p>
+      <div class="gsi-slot" id="gsiButton"></div>
+      <p class="gate-error" id="authError"></p>
+    </div>
+  </div>
+
+  <!-- ============ GATE B: 首次登入，尚未綁定姓名 ============ -->
+  <div class="gate" id="bindGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">FIRST TIME</p>
+      <h2>請選擇你的姓名</h2>
+      <p class="gate-text">
+        歡迎，<b id="bindEmail"></b><br>
+        這是你第一次登入。請從名單中選擇你的姓名，
+        送出後這個 Google 帳號就會<b>永久對應</b>到這位員工，之後不需要再選。
+      </p>
+      <div class="select-wrap">
+        <select id="bindSelect">
+          <option value="" disabled selected>請選擇姓名</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="bindBtn" disabled>確認綁定</button>
+      <p class="gate-error" id="bindError"></p>
+      <button class="btn-link" id="bindSignOut">改用其他 Google 帳號登入</button>
+    </div>
+  </div>
+
+  <!-- ============ 管理員誤入員工頁 ============ -->
+  <div class="gate" id="adminGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">ADMIN</p>
+      <h2>你是管理員</h2>
+      <p class="gate-text">
+        <b id="adminEmail"></b> 在管理員名單內。<br>
+        這個頁面是給員工填寫自己的希望排班用的，請改用管理頁查看全員班表。
+      </p>
+      <a class="btn-primary" id="toAdminLink" href="admin.html">前往管理員頁面</a>
+      <button class="btn-link" id="adminSignOut">改用其他 Google 帳號登入</button>
+    </div>
+  </div>
+
+  <!-- ============ 主畫面 ============ -->
+  <div id="appMain" style="display:none;">
+
+    <!-- 身分（登入後由後端反查，不可更改） -->
+    <div class="section">
+      <div class="section-title"><span class="num">00</span><h2>你的身分</h2></div>
+      <div class="me-card">
+        <div class="me-main">
+          <span class="me-name" id="meName">—</span>
+          <span class="role-chip" id="roleChip" style="display:none;"></span>
+        </div>
+        <span class="me-email" id="meEmail"></span>
+        <button class="btn-link" id="signOutBtn">登出</button>
+      </div>
+    </div>
+
+    <!-- STEP 1: next week Mon-Sun picker -->
+    <div class="section">
+      <div class="section-title"><span class="num">01</span><h2>點選希望上班的日期</h2></div>
+      <p class="week-note" id="weekNote"></p>
+      <div class="day-strip" id="dayStrip"></div>
+    </div>
+
+    <!-- STEP 2: preview（只顯示自己 + 與自己重疊的同事） -->
+    <div class="section">
+      <div class="section-title"><span class="num">02</span><h2>班表反映預覽</h2><span class="sub">只顯示與你重疊的人</span></div>
+      <div class="preview-wrap"><table class="matrix" id="matrixTable"></table></div>
+      <div class="overlap-summary" id="overlapSummary"></div>
+    </div>
+
+    <!-- STEP 3: 工時試算 -->
+    <div class="section" style="margin-bottom:20px;">
+      <div class="section-title"><span class="num">03</span><h2>工時試算</h2><span class="sub" id="hoursMonthLabel"></span></div>
+      <div class="hours-grid">
+        <div class="hours-card primary">
+          <span class="h-label">本月累計已上</span>
+          <span class="h-value"><b id="monthHours">—</b><span class="h-unit">小時</span></span>
+          <span class="h-sub" id="monthHoursSub">讀取中…</span>
+        </div>
+        <div class="hours-card">
+          <span class="h-label">下週希望排班</span>
+          <span class="h-value"><b id="weekHours">0</b><span class="h-unit">小時</span></span>
+          <span class="h-sub" id="weekHoursSub">尚未選擇</span>
+        </div>
+      </div>
+      <div class="note">
+        時數依照試算表上「已寫入的班別」計算（排休不計）。本月累計只算到今天為止，
+        若店長還沒建立本月分頁，數字會顯示為 0。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="submit-bar" id="submitBar" style="display:none;">
+  <div class="count">已選擇：<b id="pickedName">—</b>　共 <b id="pickedCount">0</b> 天</div>
+  <button class="btn-submit" id="submitBtn" disabled>送出班表</button>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="sheet">
+  <div class="grabber"></div>
+  <h3 id="sheetDate">8月31日（一）</h3>
+  <p class="sheet-sub">請選擇班別，或選擇排休</p>
+
+  <div class="preset-grid" id="presetGrid"></div>
+  <div class="divider-label">或自訂時間</div>
+  <div class="time-row">
+    <div class="time-field" id="startField">
+      <label>上班時間</label>
+      <select id="startSelect"></select>
+    </div>
+    <div class="time-field" id="endField">
+      <label>下班時間</label>
+      <select id="endSelect"></select>
+    </div>
+  </div>
+  <p class="range-hint" id="rangeHint"></p>
+
+  <button class="off-btn" id="offBtn">🛌　排休（本日不上班）</button>
+  <div class="sheet-actions">
+    <button class="btn-clear" id="clearBtn">刪除這天</button>
+    <button class="btn-ok" id="okBtn">確認設定</button>
+  </div>
+</div>
+
+<div class="stamp-toast" id="stampToast">已送出</div>
+
+<script src="js/config.js"></script>
+<script src="js/demo-data.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

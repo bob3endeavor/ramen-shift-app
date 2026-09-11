@@ -1,0 +1,9 @@
+{
+  "name": "ramen-shift-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ming Ramen Bar 員工排班意願申請（Google 登入 / 權限管理 / 工時試算）- 前端為純靜態頁面，後端為 Google Apps Script",
+  "scripts": {
+    "dev": "npx serve frontend -l 4173"
+  }
+}

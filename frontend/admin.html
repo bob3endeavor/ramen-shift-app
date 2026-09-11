@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Ming Ramen Bar｜排班管理（管理員）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body class="admin-body">
+
+<div class="desk">
+  <div class="noren">
+    <span class="demo-badge" id="demoBadge" style="display:none;">DEMO</span>
+    <p class="eyebrow">MING RAMEN BAR ・ 管理員專用</p>
+    <h1>全員班表總覽</h1>
+    <p>唯讀畫面，修改請直接在 Google 試算表操作</p>
+  </div>
+
+  <div id="syncBanner" class="sync-banner"></div>
+
+  <!-- ============ GATE A: 未登入 ============ -->
+  <div class="gate" id="authGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">ADMIN LOGIN</p>
+      <h2>請以管理員帳號登入</h2>
+      <p class="gate-text">
+        只有登記在 <code>ADMIN_EMAILS</code> 裡的 Google 帳號可以進入這個頁面。
+      </p>
+      <div class="gsi-slot" id="gsiButton"></div>
+      <p class="gate-error" id="authError"></p>
+    </div>
+  </div>
+
+  <!-- ============ GATE B: 非管理員 ============ -->
+  <div class="gate" id="denyGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">FORBIDDEN</p>
+      <h2>沒有管理權限</h2>
+      <p class="gate-text">
+        <b id="denyEmail"></b> 不在管理員名單內。<br>
+        如果你是員工，請改用員工頁面填寫自己的希望排班。
+      </p>
+      <a class="btn-primary" href="index.html">前往員工頁面</a>
+      <button class="btn-link" id="denySignOut">改用其他 Google 帳號登入</button>
+    </div>
+  </div>
+
+  <!-- ============ 主畫面 ============ -->
+  <div id="adminMain" style="display:none;">
+
+    <div class="section">
+      <div class="admin-bar">
+        <div class="admin-me">
+          <span class="admin-badge">ADMIN</span>
+          <span class="me-email" id="meEmail"></span>
+        </div>
+        <button class="btn-link" id="signOutBtn">登出</button>
+      </div>
+    </div>
+
+    <!-- 週次切換 -->
+    <div class="section">
+      <div class="section-title"><span class="num">01</span><h2>選擇週次</h2></div>
+      <div class="week-nav">
+        <button class="week-btn" id="prevWeek">← 上一週</button>
+        <span class="week-label" id="weekLabel">—</span>
+        <button class="week-btn" id="nextWeek">下一週 →</button>
+      </div>
+      <div class="week-quick">
+        <button class="quick-btn" data-offset="0">本週</button>
+        <button class="quick-btn" data-offset="1">下週</button>
+      </div>
+    </div>
+
+    <!-- 全員班表 -->
+    <div class="section">
+      <div class="section-title"><span class="num">02</span><h2>全員班表</h2><span class="sub" id="weekStatLabel"></span></div>
+      <div class="preview-wrap"><table class="matrix admin-matrix" id="matrixTable"></table></div>
+    </div>
+
+    <!-- 員工 / Email 對照 -->
+    <div class="section" style="margin-bottom:28px;">
+      <div class="section-title"><span class="num">03</span><h2>員工帳號綁定狀態</h2><span class="sub" id="rosterSheetLabel"></span></div>
+      <div class="roster-list" id="rosterList"></div>
+      <div class="note">
+        Email 是員工第一次 Google 登入時自動寫入試算表 C 欄的。
+        顯示「尚未綁定」代表這位員工還沒登入過；你也可以直接在試算表 C 欄手動預填。
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/demo-data.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

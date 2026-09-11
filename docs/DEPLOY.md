@@ -16,15 +16,27 @@
 2. 「API 和服務 > OAuth 同意畫面」先設定好（外部 / External，填入應用程式
    名稱與支援 Email 即可）。
 
-   > ⚠ **記得把發布狀態改成「正式版 (In production)」。**
-   > 停在「測試中 (Testing)」的話，只有加進「測試使用者」名單的帳號能登入
-   > （上限 100 人）。自己的帳號通常已經在名單裡，所以測試時不會發現，
-   > 等發給店員之後才會冒出「只有我登得進去」的狀況。
+   > **本店目前採「測試使用者」方式，發布狀態維持在「測試中 (Testing)」。**
+   > 員工只有 11 位，測試使用者上限 100 人綽綽有餘，不用先處理發布流程。
    >
-   > 這個 app 只用到 `email` / `profile` 基本範圍，**切成正式版不需要
-   > 送 Google 審查 (verification)**，按下「發布應用程式」即可。
-   > 若暫時只想給幾個人試用，也可以留在測試中，把他們的 Gmail
-   > 一個一個加進「測試使用者」。
+   > 做法：新 UI 在「Google Auth Platform > 對象 (Audience)」、舊 UI 在
+   > 「OAuth 同意畫面」，找到「測試使用者」按 **Add users**，把 11 位員工的
+   > Gmail 一次貼上去。**沒加進名單的帳號會看到「存取遭封鎖」**，而店主自己
+   > 通常已經在名單內，所以只用自己的帳號測試不會發現這件事。
+   >
+   > 常聽到的「測試模式 7 天就失效」對這個 app 沒有影響 —— 那是 refresh
+   > token 的限制，這個 app 只用 ID Token（1 小時效期），不碰 refresh token。
+   >
+   > 因為只用到 `email` / `profile` / `openid` 這些**非機密範圍**，
+   > 員工登入時也**不會看到「Google 尚未驗證這個應用程式」的警告畫面**。
+   >
+   > **什麼時候該改成「正式版」？** 等到「每進一位新員工就要去加一次測試
+   > 使用者」開始嫌麻煩的時候。切正式版一樣**不需要送 Google 審查**，
+   > 但要先把「品牌 (Branding)」頁的必填欄位補完：應用程式名稱、
+   > 使用者支援電子郵件、開發人員聯絡資訊。
+   > ⚠ 「應用程式首頁 / 隱私權政策 / 服務條款」這三個網址欄請**全部留空**，
+   > 一旦填了就會強制要求「授權網域」，而 `github.io` 屬於公開字尾清單、
+   > 無法驗證擁有權，反而會卡住。
 3. 「API 和服務 > 憑證 > 建立憑證 > OAuth 用戶端 ID」，類型選
    **網頁應用程式**。
 4. **Authorized JavaScript origins（承認済みの JavaScript 生成元）**
@@ -259,7 +271,8 @@ http://localhost:4173/admin.html。
 | --- | --- |
 | 畫面一直顯示示範模式 | `config.js` 的 `API_URL` 或 `GOOGLE_CLIENT_ID` 還是預設的 `PASTE_...` |
 | 登入按鈕沒出現 / 按了沒反應 | 目前網址的 origin 沒有加進 OAuth 用戶端的 Authorized JavaScript origins；或正在 iframe/預覽視窗裡測試 |
-| 只有自己登得進去，店員登入被拒 | OAuth 同意畫面還停在「測試中」，店員的帳號不在測試使用者名單內 → 改成「正式版」（見 A-2） |
+| 店員看到「存取遭封鎖」，只有自己登得進去 | 該店員的 Gmail 還沒加進「測試使用者」名單 → 到「對象 (Audience) > 測試使用者 > Add users」補上（見 A-2） |
+| 測試使用者加了還是被拒 | 店員實際登入的 Google 帳號跟登記的那個不一樣（工作用 / 私人用混淆），請他確認手機上登入的是哪一個 |
 | 上線後突然全部登不進去 | GitHub Pages 的 origin (`https://bob3endeavor.github.io`) 忘了加進生成元 |
 | `token_audience_mismatch` | `config.js` 的 `GOOGLE_CLIENT_ID` 跟 Script Properties 的 `GOOGLE_CLIENT_ID` 不是同一組 |
 | `server_missing_client_id` | Apps Script 的 Script Properties 還沒設定 `GOOGLE_CLIENT_ID` |

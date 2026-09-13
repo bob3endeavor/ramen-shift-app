@@ -31,6 +31,10 @@
         只有登記在 <code>ADMIN_EMAILS</code> 裡的 Google 帳號可以進入這個頁面。
       </p>
       <div class="gsi-slot" id="gsiButton"></div>
+      <div class="gate-busy" id="authBusy" hidden>
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="authBusyText">登入中…</span>
+      </div>
       <p class="gate-error" id="authError"></p>
     </div>
   </div>

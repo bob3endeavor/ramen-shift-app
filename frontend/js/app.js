@@ -25,6 +25,7 @@
     month: null,     // {hours, days, offDays, month, note}
     openDate: null,
     saving: false,
+    signingIn: false,  // 登入流程進行中（避免重複觸發）
   };
 
   /* ---------------- date helpers ---------------- */
@@ -116,7 +117,9 @@
     }
 
     Auth.onAuthLost = function (code) {
+      state.signingIn = false;
       showOnly(authGate);
+      setAuthBusy(false);
       $('authError').textContent = Auth.describeError(code);
       startSignIn();
     };
@@ -125,20 +128,48 @@
     await startSignIn();
   }
 
+  /**
+   * 登入處理中就把登入按鈕換成「處理中」。
+   * Apps Script 第一次被叫醒要好幾秒，按鈕若一直留著，使用者會以為
+   * 沒反應而再按一次 —— 那就是「要登入兩次」的來源。
+   */
+  function setAuthBusy(busy, text) {
+    const slot = $('gsiButton');
+    const busyEl = $('authBusy');
+    if (slot) slot.style.display = busy ? 'none' : 'flex';
+    if (busyEl) {
+      busyEl.hidden = !busy;
+      if (busy && text) $('authBusyText').textContent = text;
+    }
+  }
+
   async function startSignIn() {
+    if (state.signingIn) return;   // 連按兩次不會跑兩套流程
+    state.signingIn = true;
     $('authError').textContent = '';
+    setAuthBusy(false);
+
     try {
       await Auth.signIn($('gsiButton'));
     } catch (err) {
+      state.signingIn = false;
+      setAuthBusy(false);
       $('authError').textContent = err.message;
       return;
     }
-    await routeByProfile();
+
+    setAuthBusy(true, '登入成功，確認身分中…');
+    try {
+      await routeByProfile();
+    } finally {
+      state.signingIn = false;
+    }
   }
 
   async function routeByProfile() {
     showBanner('ok', '登入成功，讀取資料中…');
     const who = await Auth.whoami();
+    setAuthBusy(false);
     if (!who.ok) {
       showOnly(authGate);
       $('authError').textContent = Auth.describeError(who.error);

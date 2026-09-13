@@ -15,6 +15,7 @@
     roster: [],      // [{name, role, email}]
     data: {},        // { "YYYY-MM-DD": { name: rawCellText } }
     loading: false,
+    signingIn: false,  // 登入流程進行中（避免重複觸發）
   };
 
   /* ---------------- helpers ---------------- */
@@ -85,7 +86,9 @@
     }
 
     Auth.onAuthLost = function (code) {
+      state.signingIn = false;
       showOnly(authGate);
+      setAuthBusy(false);
       $('authError').textContent = Auth.describeError(code);
       startSignIn();
     };
@@ -94,32 +97,58 @@
     await startSignIn();
   }
 
+  /**
+   * 登入處理中就把登入按鈕換成「處理中」。
+   * Apps Script 第一次被叫醒要好幾秒，按鈕留著的話會被按第二次。
+   */
+  function setAuthBusy(busy, text) {
+    const slot = $('gsiButton');
+    const busyEl = $('authBusy');
+    if (slot) slot.style.display = busy ? 'none' : 'flex';
+    if (busyEl) {
+      busyEl.hidden = !busy;
+      if (busy && text) $('authBusyText').textContent = text;
+    }
+  }
+
   async function startSignIn() {
+    if (state.signingIn) return;   // 連按兩次不會跑兩套流程
+    state.signingIn = true;
     $('authError').textContent = '';
+    setAuthBusy(false);
+
     try {
       await Auth.signIn($('gsiButton'));
     } catch (err) {
+      state.signingIn = false;
+      setAuthBusy(false);
       $('authError').textContent = err.message;
       return;
     }
 
+    setAuthBusy(true, '登入成功，確認身分中…');
     showBanner('ok', '登入成功，讀取資料中…');
-    const who = await Auth.whoami();
-    if (!who.ok) {
-      hideBanner();
-      showOnly(authGate);
-      $('authError').textContent = Auth.describeError(who.error);
-      return;
-    }
-    if (who.role !== 'admin') {
-      hideBanner();
-      $('denyEmail').textContent = who.email;
-      showOnly(denyGate);
-      return;
-    }
+    try {
+      const who = await Auth.whoami();
+      setAuthBusy(false);
+      if (!who.ok) {
+        hideBanner();
+        showOnly(authGate);
+        $('authError').textContent = Auth.describeError(who.error);
+        return;
+      }
+      if (who.role !== 'admin') {
+        hideBanner();
+        $('denyEmail').textContent = who.email;
+        showOnly(denyGate);
+        return;
+      }
 
-    state.email = who.email;
-    await enterAdmin();
+      state.email = who.email;
+      await enterAdmin();
+    } finally {
+      state.signingIn = false;
+    }
   }
 
   $('denySignOut').onclick = function () { Auth.signOut(); location.reload(); };

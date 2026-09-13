@@ -130,6 +130,9 @@ const Auth = (function () {
         callback: function (response) {
           state.idToken = response.credential;
           storeToken(response.credential);
+          // 拿到憑證後立刻收掉還開著的 One Tap，
+          // 不然畫面上會同時留著「One Tap」跟登入按鈕，看起來像要登入兩次
+          try { google.accounts.id.cancel(); } catch (err) { /* 沒開著就忽略 */ }
           resolve(response.credential);
         },
         auto_select: true,

@@ -258,6 +258,12 @@
       `開放申請下週班表：<b>${fmtMD(state.days[0])}（一）〜 ${fmtMD(state.days[6])}（日）</b>`;
 
     showOnly(appMain);
+
+    // 先把骨架畫出來再去要資料。Apps Script 冷啟動要好幾秒，
+    // 等資料回來才第一次 render 的話，那幾秒畫面幾乎是空白的。
+    renderAll();
+    showBanner('ok', '讀取班表中…');
+
     await loadWeek();
     renderAll();
     loadMonthHours();

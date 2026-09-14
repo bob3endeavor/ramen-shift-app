@@ -9,6 +9,31 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+/* 例外で画面が真っ白のまま終わらないよう、エラーを画面上に出す。
+   スマホでは開発者ツールが見られないので、これが唯一の手掛かりになる。 */
+(function () {
+  function show(msg) {
+    var el = document.getElementById('fatalError');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'fatalError';
+      el.className = 'fatal-error';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = '⚠ 錯誤：' + msg;
+    el.style.display = 'block';
+  }
+  window.addEventListener('error', function (e) {
+    var f = String(e.filename || '').split('/').pop();
+    show((e.message || 'unknown') + (f ? '  @' + f + ':' + (e.lineno || '?') : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    show('Promise: ' + ((r && (r.message || r)) || 'unknown'));
+  });
+})();
+</script>
 </head>
 <body class="admin-body">
 

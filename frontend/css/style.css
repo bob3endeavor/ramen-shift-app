@@ -422,3 +422,13 @@
   @media (prefers-reduced-motion: reduce){
     .spinner{ animation:none; border-top-color:var(--chili); }
   }
+
+  /* ---------- 致命錯誤的可見提示（手機上看不到 console） ---------- */
+  .fatal-error{
+    position:fixed; left:0; right:0; bottom:0; z-index:9999; display:none;
+    background:var(--chili-dark); color:#ffe4dd;
+    font-family:'DotGothic16', monospace; font-size:11px; line-height:1.6;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+    word-break:break-word; white-space:pre-wrap;
+    box-shadow:0 -3px 12px rgba(0,0,0,.4);
+  }

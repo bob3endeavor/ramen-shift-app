@@ -137,7 +137,10 @@
         $('authError').textContent = Auth.describeError(who.error);
         return;
       }
-      if (!who.isAdmin) {
+      // isAdmin は後端を更新してから返るフィールド。
+      // 後端が古いままでも管理員が締め出されないよう role でも判定する。
+      const isAdmin = !!(who.isAdmin || who.role === 'admin');
+      if (!isAdmin) {
         hideBanner();
         $('denyEmail').textContent = who.email;
         showOnly(denyGate);

@@ -195,7 +195,8 @@
     }
 
     state.me = { name: who.name, role: who.roleTitle || '', email: who.email };
-    state.isAdmin = !!who.isAdmin;
+    // 後端が古く isAdmin を返さない場合も考慮（その場合 role==='admin' で来る）
+    state.isAdmin = !!(who.isAdmin || who.role === 'admin');
     await enterApp();
   }
 

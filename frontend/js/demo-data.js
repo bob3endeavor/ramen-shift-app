@@ -8,8 +8,8 @@
  * 人員異動請直接改試算表，不用回來改這裡。
  */
 const DEMO_STAFF = [
-  {name:"宮嶋優志\nYUJI", role:"正職"},
-  {name:"林暐軒", role:"內場\n組長"},
+  {name:"宮嶋優志 YUJI", role:"正職"},
+  {name:"林暐軒", role:"內場組長"},
   {name:"章芮綺", role:"PT"},
   {name:"沈培君", role:"PT"},
   {name:"錢玉珍", role:"PT"},
@@ -36,7 +36,7 @@ const DEMO_MONTH_DAYS = 13;
 
 /** 示範模式下的 Email 對照表（admin.html 的全員名單用） */
 const DEMO_EMAILS = {
-  "宮嶋優志\nYUJI": "demo.owner@example.com",
+  "宮嶋優志 YUJI": "demo.owner@example.com",
   "林暐軒": "demo.chief@example.com",
   "林欣霈": "demo.staff@example.com",
 };

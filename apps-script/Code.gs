@@ -499,36 +499,50 @@ function resolveIdentity_(idToken) {
 
   const email = v.email;
 
-  // 管理員完全依 ADMIN_EMAILS 判斷，不看前端傳來的任何欄位
-  if (getAdminEmails_().indexOf(email) !== -1) {
-    return { ok: true, email: email, role: 'admin', name: '', roleTitle: '管理員' };
-  }
+  // 管理員資格是一個「旗標」，不是角色：
+  // 店長本人同時也是員工（要排自己的班），所以兩者必須能並存。
+  // 完全依 ADMIN_EMAILS 判斷，不看前端傳來的任何欄位。
+  const isAdmin = getAdminEmails_().indexOf(email) !== -1;
 
   const sheet = rosterSheet_();
-  if (!sheet) return { ok: false, error: 'roster_sheet_not_found' };
+  if (!sheet) {
+    // 名單分頁還沒建立時，純管理員仍然要能登入（才能去管理頁看狀況）
+    if (isAdmin) {
+      return { ok: true, email: email, isAdmin: true, role: 'admin', name: '', roleTitle: '管理員' };
+    }
+    return { ok: false, error: 'roster_sheet_not_found' };
+  }
 
   const roster = getRoster_(sheet);
   const me = roster.find(function (p) { return p.email && p.email === email; });
 
-  if (!me) {
+  // 名單裡有這個 Email → 是員工（同時可能也是管理員）
+  if (me) {
     return {
       ok: true,
       email: email,
-      role: 'unregistered',
-      name: '',
-      unboundRoster: roster
-        .filter(function (p) { return !p.email; })
-        .map(function (p) { return { name: p.name, role: p.role }; }),
+      isAdmin: isAdmin,
+      role: 'employee',
+      name: me.name,
+      roleTitle: me.role,
+      row: me.row,
     };
+  }
+
+  // 名單裡沒有，但在管理員名單內 → 純管理員（不排自己的班）
+  if (isAdmin) {
+    return { ok: true, email: email, isAdmin: true, role: 'admin', name: '', roleTitle: '管理員' };
   }
 
   return {
     ok: true,
     email: email,
-    role: 'employee',
-    name: me.name,
-    roleTitle: me.role,
-    row: me.row,
+    isAdmin: false,
+    role: 'unregistered',
+    name: '',
+    unboundRoster: roster
+      .filter(function (p) { return !p.email; })
+      .map(function (p) { return { name: p.name, role: p.role }; }),
   };
 }
 
@@ -619,7 +633,13 @@ function doGet(e) {
 }
 
 function handleWhoami_(who) {
-  const out = { ok: true, role: who.role, email: who.email, name: who.name || '' };
+  const out = {
+    ok: true,
+    role: who.role,
+    isAdmin: !!who.isAdmin,
+    email: who.email,
+    name: who.name || '',
+  };
   if (who.role === 'employee') out.roleTitle = who.roleTitle || '';
   if (who.role === 'unregistered') out.unboundRoster = who.unboundRoster || [];
   return jsonOut_(out);
@@ -636,8 +656,13 @@ function handleGetWeek_(who, p) {
   if (!datesParam) return jsonOut_({ ok: false, error: 'missing dates' });
   const dates = datesParam.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
 
-  if (who.role === 'admin') return adminWeek_(dates);
-  return employeeWeek_(who, dates);
+  // admin.html は view=admin を付けてくる。員工頁（無此參數）では、
+  // 店長も「自分の班表＋重なる同僚」だけを見る員工視角になる。
+  if (who.isAdmin && (p.view === 'admin' || who.role !== 'employee')) {
+    return adminWeek_(dates);
+  }
+  if (who.role === 'employee') return employeeWeek_(who, dates);
+  return jsonOut_({ ok: false, error: 'not_registered' });
 }
 
 function adminWeek_(dates) {
@@ -803,7 +828,7 @@ function weekSubtotal_(who, dates) {
 
 /** 管理員專用：全員姓名、職稱、Email */
 function handleGetAdminRoster_(who) {
-  if (who.role !== 'admin') return jsonOut_({ ok: false, error: 'admin_only' });
+  if (!who.isAdmin) return jsonOut_({ ok: false, error: 'admin_only' });
 
   const sheet = rosterSheet_();
   if (!sheet) return jsonOut_({ ok: false, error: 'roster_sheet_not_found' });
@@ -897,6 +922,8 @@ function handleLinkAccount_(who, body) {
 
 /** 送出排班：姓名一律由驗證後的 Email 反查，不看前端傳來的 name */
 function handleSubmitShift_(who, body) {
+  // 管理員兼員工（店長）は role==='employee' なので、ここは通る。
+  // 名單に載っていない純管理員だけを弾く。
   if (who.role === 'admin') return jsonOut_({ ok: false, error: 'admin_is_read_only' });
   if (who.role !== 'employee') return jsonOut_({ ok: false, error: 'not_registered' });
   if (!body.date) return jsonOut_({ ok: false, error: 'missing date' });

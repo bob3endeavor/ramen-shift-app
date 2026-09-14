@@ -137,7 +137,7 @@
         $('authError').textContent = Auth.describeError(who.error);
         return;
       }
-      if (who.role !== 'admin') {
+      if (!who.isAdmin) {
         hideBanner();
         $('denyEmail').textContent = who.email;
         showOnly(denyGate);
@@ -208,7 +208,10 @@
     }
 
     showBanner('ok', '讀取班表中…');
-    const res = await Auth.get('getWeek', { dates: state.days.map(ymd).join(',') });
+    const res = await Auth.get('getWeek', {
+      dates: state.days.map(ymd).join(','),
+      view: 'admin',   // 店長は員工でもあるので、管理視角だと明示する
+    });
     state.loading = false;
 
     if (!res.ok) {

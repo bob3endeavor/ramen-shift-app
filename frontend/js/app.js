@@ -26,6 +26,7 @@
     openDate: null,
     saving: false,
     signingIn: false,  // 登入流程進行中（避免重複觸發）
+    isAdmin: false,    // 管理員兼員工（店長）のとき true
   };
 
   /* ---------------- date helpers ---------------- */
@@ -177,6 +178,8 @@
       return;
     }
 
+    // 名單に載っていない「純管理員」だけ管理頁へ誘導する。
+    // 店長のように員工でもある場合は、そのまま員工頁で自分の班を出す。
     if (who.role === 'admin') {
       hideBanner();
       $('adminEmail').textContent = who.email;
@@ -192,6 +195,7 @@
     }
 
     state.me = { name: who.name, role: who.roleTitle || '', email: who.email };
+    state.isAdmin = !!who.isAdmin;
     await enterApp();
   }
 
@@ -253,6 +257,8 @@
     } else {
       roleChip.style.display = 'none';
     }
+
+    $('adminLinkRow').style.display = state.isAdmin ? 'block' : 'none';
 
     $('weekNote').innerHTML =
       `開放申請下週班表：<b>${fmtMD(state.days[0])}（一）〜 ${fmtMD(state.days[6])}（日）</b>`;

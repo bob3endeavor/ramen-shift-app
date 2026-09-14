@@ -3,19 +3,20 @@
  * 僅在 CONFIG 尚未設定 API_URL / GOOGLE_CLIENT_ID 時使用，方便在還沒
  * 部署 Apps Script、也還沒申請 OAuth 用戶端之前，直接在本機開啟
  * index.html / admin.html 預覽整個流程（會跳過 Google 登入）。
+ *
+ * 這份名單只是示範用。正式環境的名單一律以試算表上的 A/B 欄為準，
+ * 人員異動請直接改試算表，不用回來改這裡。
  */
 const DEMO_STAFF = [
-  {name:"林炘緯", role:"經理"},
-  {name:"林暐軒", role:"內場組長"},
-  {name:"宮嶋優志", role:"PT"},
+  {name:"宮嶋優志\nYUJI", role:"正職"},
+  {name:"林暐軒", role:"內場\n組長"},
   {name:"章芮綺", role:"PT"},
   {name:"沈培君", role:"PT"},
   {name:"錢玉珍", role:"PT"},
   {name:"林欣霈", role:"PT"},
-  {name:"楊廷瑜", role:"PT"},
-  {name:"曾衣萱", role:"PT"},
-  {name:"子涵", role:"PT"},
-  {name:"Jack", role:"支援"},
+  {name:"小羅", role:"PT"},
+  {name:"德心", role:"PT"},
+  {name:"Jack", role:""},
 ];
 const DEMO_PATTERNS = {
   "林暐軒": ["10:30\n15:30","排休\nday off","10:30\n15:30","排休\nday off","10:30\n15:30","排休\nday off","排休\nday off"],
@@ -35,7 +36,7 @@ const DEMO_MONTH_DAYS = 13;
 
 /** 示範模式下的 Email 對照表（admin.html 的全員名單用） */
 const DEMO_EMAILS = {
-  "林炘緯": "demo.owner@example.com",
+  "宮嶋優志\nYUJI": "demo.owner@example.com",
   "林暐軒": "demo.chief@example.com",
   "林欣霈": "demo.staff@example.com",
 };

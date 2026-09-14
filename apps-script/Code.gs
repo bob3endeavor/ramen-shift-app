@@ -239,18 +239,37 @@ function rosterSheet_() {
  * 直接在試算表上編輯 A/B 欄即可，不用再動這段。
  */
 const SETUP_STAFF = [
-  ['經理', '林炘緯'],
-  ['內場組長', '林暐軒'],
-  ['PT', '宮嶋優志'],
+  ['正職', '宮嶋優志\nYUJI'],
+  ['內場\n組長', '林暐軒'],
   ['PT', '章芮綺'],
   ['PT', '沈培君'],
   ['PT', '錢玉珍'],
   ['PT', '林欣霈'],
-  ['PT', '楊廷瑜'],
-  ['PT', '曾衣萱'],
-  ['PT', '子涵'],
-  ['支援', 'Jack'],
+  ['PT', '小羅'],
+  ['PT', '德心'],
+  ['', 'Jack'],
 ];
+
+/**
+ * 建立新月份分頁時要寫入的名單。
+ *
+ * **優先沿用現有分頁的名單（連 C 欄 Email 一起帶過去）**，
+ * 只有在一個排班分頁都還沒有時，才退回用上面的 SETUP_STAFF。
+ *
+ * 這件事很重要：人員異動是直接改試算表，不會回頭改 SETUP_STAFF。
+ * 如果新分頁一律從 SETUP_STAFF 生成，下個月名單就會倒退回舊的，
+ * 而且 Email 欄被清空 —— 全體員工會突然變成「尚未綁定」。
+ */
+function rosterForNewSheet_() {
+  const src = rosterSheet_();
+  if (src) {
+    const roster = getRoster_(src);
+    if (roster.length) {
+      return roster.map(function (p) { return [p.role, p.name, p.email]; });
+    }
+  }
+  return SETUP_STAFF.map(function (r) { return [r[0], r[1], '']; });
+}
 
 const DOW_ZH_GS = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -347,6 +366,11 @@ function createMonthSheet_(ss, year, month) {
   const lastCol = EMAIL_COL + daysInMonth;
   const sheet = ss.insertSheet(name);
 
+  // 這個月份先前被查過（當時還不存在，快取成 null），建立後要讓快取失效
+  delete __sheetCache[year + '-' + month];
+  delete __headerCache[name];
+  delete __rosterCache[name];
+
   // --- 第 1 列：欄位標題 + 日期 ---
   sheet.getRange(1, ROLE_COL).setValue('職稱');
   sheet.getRange(1, NAME_COL).setValue('姓名');
@@ -362,14 +386,18 @@ function createMonthSheet_(ss, year, month) {
   sheet.getRange(2, firstDataCol, 1, daysInMonth).setValues([dayNames]);
   sheet.getRange(2, ROLE_COL).setValue(year + ' 年 ' + month + ' 月');
 
-  // --- 第 3 列起：員工名單 ---
-  if (SETUP_STAFF.length) {
-    sheet.getRange(STAFF_START_ROW, ROLE_COL, SETUP_STAFF.length, 2)
-      .setValues(SETUP_STAFF);
+  // --- 第 3 列起：員工名單（沿用現有分頁，含 C 欄 Email）---
+  const staff = rosterForNewSheet_();
+  if (staff.length) {
+    sheet.getRange(STAFF_START_ROW, ROLE_COL, staff.length, EMAIL_COL)
+      .setValues(staff);
   }
+  // rosterForNewSheet_() が「まだ空のこの分頁」を読んで空の名單を
+  // キャッシュしているので、書き込んだ後に必ず捨てる
+  invalidateRoster_(sheet);
 
   // --- 版面 ---
-  const lastRow = STAFF_START_ROW + Math.max(SETUP_STAFF.length, 1) - 1;
+  const lastRow = STAFF_START_ROW + Math.max(staff.length, 1) - 1;
   sheet.getRange(1, 1, 2, lastCol)
     .setFontWeight('bold')
     .setBackground('#f0ece1')

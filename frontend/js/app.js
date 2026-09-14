@@ -57,7 +57,7 @@
   }
   function mapRoleCls(role) {
     role = role || '';
-    if (role.includes('經理')) return 'mgr';
+    if (role.includes('經理') || role.includes('正職')) return 'mgr';
     if (role.includes('組長')) return 'chief';
     if (role.includes('支援')) return 'support';
     return 'pt';

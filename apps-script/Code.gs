@@ -670,10 +670,12 @@ function adminWeek_(dates) {
   // 一週可能跨兩個月份分頁，各分頁的名單長度未必相同，逐日各自取名單
   const seen = {};
   const merged = [];
+  let firstSheet = null;   // 管理頁「在試算表開啟」連結用
 
   dates.forEach(function (dateStr) {
     const loc = locateDate_(dateStr);
     if (!loc) { result[dateStr] = { __error: 'sheet_or_date_not_found' }; return; }
+    if (!firstSheet) firstSheet = loc.sheet;
 
     const roster = getRoster_(loc.sheet);
     if (!roster.length) { result[dateStr] = {}; return; }
@@ -693,7 +695,19 @@ function adminWeek_(dates) {
     result[dateStr] = dayData;
   });
 
-  return jsonOut_({ ok: true, role: 'admin', roster: merged, data: result });
+  return jsonOut_({
+    ok: true,
+    role: 'admin',
+    roster: merged,
+    data: result,
+    // 管理員限定：直接跳到試算表對應的月份分頁
+    sheetUrl: firstSheet ? sheetUrl_(firstSheet) : ss_().getUrl(),
+  });
+}
+
+/** 某個分頁的直接連結（#gid=... 會直接開在那一頁） */
+function sheetUrl_(sheet) {
+  return ss_().getUrl() + '#gid=' + sheet.getSheetId();
 }
 
 function employeeWeek_(who, dates) {
@@ -836,6 +850,9 @@ function handleGetAdminRoster_(who) {
   return jsonOut_({
     ok: true,
     sheetName: sheet.getName(),
+    spreadsheetName: ss_().getName(),
+    spreadsheetUrl: ss_().getUrl(),
+    sheetUrl: sheetUrl_(sheet),
     roster: getRoster_(sheet).map(function (p) {
       return { name: p.name, role: p.role, email: p.email };
     }),

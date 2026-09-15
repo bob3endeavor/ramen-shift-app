@@ -442,3 +442,17 @@
     font-size:11.5px; font-weight:700; color:var(--chili-dark); text-decoration:none;
     border-bottom:1px solid var(--chili-dark);
   }
+
+  /* ---------- 管理頁：試算表への直リンク ---------- */
+  .sheet-link-row{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px;
+  }
+  .sheet-link-row a{
+    display:inline-block; font-size:12px; font-weight:700; text-decoration:none;
+    color:var(--paper); background:var(--negi);
+    padding:8px 14px; border-radius:8px;
+    box-shadow:0 2px 0 rgba(0,0,0,.25);
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  .sheet-link-row a:active{ transform:translateY(2px); box-shadow:none; }
+  .sheet-link-note{ font-size:10.5px; color:var(--ink-soft); }

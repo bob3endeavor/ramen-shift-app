@@ -16,6 +16,7 @@
     data: {},        // { "YYYY-MM-DD": { name: rawCellText } }
     loading: false,
     signingIn: false,  // 登入流程進行中（避免重複觸發）
+    sheetUrl: '',      // 試算表への直リンク（管理員限定で後端から届く）
   };
 
   /* ---------------- helpers ---------------- */
@@ -185,6 +186,7 @@
     }
     state.roster = res.roster || [];
     $('rosterSheetLabel').textContent = res.sheetName || '';
+    setSheetLink(res.sheetUrl || res.spreadsheetUrl);
     renderRoster();
   }
 
@@ -223,6 +225,7 @@
     }
     if (res.roster && res.roster.length) state.roster = res.roster;
     state.data = res.data || {};
+    if (res.sheetUrl) setSheetLink(res.sheetUrl);
 
     const missing = state.days.filter(function (d) {
       const cell = state.data[ymd(d)];
@@ -235,6 +238,16 @@
     }
     renderMatrix();
     renderRoster();
+  }
+
+  /** 試算表へのリンクを出す。URL が無ければ（示範模式など）非表示のまま */
+  function setSheetLink(url) {
+    const row = $('sheetLinkRow');
+    const link = $('sheetLink');
+    if (!url) { row.style.display = 'none'; return; }
+    state.sheetUrl = url;
+    link.href = url;
+    row.style.display = 'flex';
   }
 
   /* ---------------- 週次切換 ---------------- */

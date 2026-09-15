@@ -177,7 +177,14 @@ const Auth = (function () {
     if (typeof state.onAuthLost === 'function') state.onAuthLost(code);
   }
 
-  /** GET {API_URL}?action=...&id_token=...&token=... */
+  /**
+   * GET {API_URL}?action=...&id_token=...&token=...
+   *
+   * Apps Script は冷えていると 10 秒以上かかることがあり、そのあたりで
+   * 通信が落ちることがある。読み取りは何度やっても副作用がないので、
+   * 通信レベルの失敗（fetch が投げた／JSON が返らない）だけ自動で再試行する。
+   * サーバーがエラー内容を返してきた場合は、正しい応答なので再試行しない。
+   */
   async function get(action, params) {
     if (!isConfigured) return { ok: false, error: 'not_configured' };
 
@@ -186,16 +193,25 @@ const Auth = (function () {
       token: CONFIG.API_TOKEN,
       id_token: state.idToken || '',
     }, params || {}));
+    const url = CONFIG.API_URL + '?' + qs.toString();
 
-    let json;
-    try {
-      const res = await fetch(CONFIG.API_URL + '?' + qs.toString());
-      json = await res.json();
-    } catch (err) {
-      return { ok: false, error: String(err && err.message ? err.message : err) };
+    let lastErr = 'unknown';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise(function (r) { setTimeout(r, attempt * 1200); });
+      }
+      let json;
+      try {
+        const res = await fetch(url);
+        json = await res.json();
+      } catch (err) {
+        lastErr = String(err && err.message ? err.message : err);
+        continue;   // 通信の失敗 → 再試行
+      }
+      if (!json.ok && isAuthError(json.error)) loseAuth(json.error);
+      return json;  // サーバーが答えた以上、内容が何であれそれが答え
     }
-    if (!json.ok && isAuthError(json.error)) loseAuth(json.error);
-    return json;
+    return { ok: false, error: lastErr };
   }
 
   /** POST（text/plain 以避開 CORS 預檢） */

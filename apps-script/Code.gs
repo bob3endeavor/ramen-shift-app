@@ -700,7 +700,8 @@ function adminWeek_(dates) {
     role: 'admin',
     roster: merged,
     data: result,
-    // 管理員限定：直接跳到試算表對應的月份分頁
+    // 管理頁はこの 1 本だけで描けるようにする（名單も含めて返す）
+    sheetName: firstSheet ? firstSheet.getName() : '',
     sheetUrl: firstSheet ? sheetUrl_(firstSheet) : ss_().getUrl(),
   });
 }

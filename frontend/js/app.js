@@ -103,7 +103,18 @@
     syncBanner.className = `sync-banner show ${kind}`;
     syncBanner.textContent = text;
   }
-  function hideBanner() { syncBanner.className = 'sync-banner'; }
+  function hideBanner() {
+    syncBanner.className = 'sync-banner';
+    syncBanner.onclick = null;
+    syncBanner.style.cursor = '';
+  }
+
+  /** 失敗時は行き止まりにせず、バナー自体を押して再試行できるようにする */
+  function showRetryBanner(text, retryFn) {
+    showBanner('error', text + '　👉 點此重試');
+    syncBanner.style.cursor = 'pointer';
+    syncBanner.onclick = function () { hideBanner(); retryFn(); };
+  }
 
   /* ============================================================
    * 登入流程
@@ -296,7 +307,10 @@
 
     const res = await Auth.get('getWeek', { dates: state.days.map(ymd).join(',') });
     if (!res.ok) {
-      showBanner('error', '⚠ 無法讀取班表：' + Auth.describeError(res.error));
+      showRetryBanner('⚠ 無法讀取班表：' + Auth.describeError(res.error), async function () {
+        await loadWeek();
+        renderAll();
+      });
       return;
     }
 

@@ -62,7 +62,22 @@
     syncBanner.className = `sync-banner show ${kind}`;
     syncBanner.textContent = text;
   }
-  function hideBanner() { syncBanner.className = 'sync-banner'; }
+  function hideBanner() {
+    syncBanner.className = 'sync-banner';
+    syncBanner.onclick = null;
+    syncBanner.style.cursor = '';
+  }
+
+  /** 失敗時は行き止まりにせず、バナー自体を押して再試行できるようにする */
+  function showRetryBanner(text, retryFn) {
+    showBanner('error', text + '　👉 點此重試');
+    syncBanner.style.cursor = 'pointer';
+    syncBanner.onclick = function () {
+      hideBanner();
+      state.loading = false;
+      retryFn();
+    };
+  }
 
   const authGate = $('authGate');
   const denyGate = $('denyGate');
@@ -167,12 +182,16 @@
   async function enterAdmin() {
     $('meEmail').textContent = state.email;
     showOnly(adminMain);
-    showBanner('ok', '讀取資料中…');
 
-    // 名單と班表は依存関係がないので並列で取る。
-    // Apps Script は冷えていると 1 本あたり数秒かかるため、
-    // 直列だと画面が空のまま 10 秒以上待たされる。
-    await Promise.all([loadRoster(), loadWeek()]);
+    // getWeek（管理視角）は名單も試算表リンクも一緒に返すので、
+    // 初期表示はこの 1 本で足りる。呼び出しが減るぶん速く、失敗点も減る。
+    await loadWeek();
+
+    // 名單が取れなかったとき（週の分頁が無い）や、sheetName を返さない
+    // 古い後端のときだけ、名單を単独で取りにいく
+    if (!state.roster.length || !$('rosterSheetLabel').textContent) {
+      await loadRoster();
+    }
   }
 
   async function loadRoster() {
@@ -226,11 +245,12 @@
     state.loading = false;
 
     if (!res.ok) {
-      showBanner('error', '⚠ 無法讀取班表：' + Auth.describeError(res.error));
+      showRetryBanner('⚠ 無法讀取班表：' + Auth.describeError(res.error), loadWeek);
       return;
     }
     if (res.roster && res.roster.length) state.roster = res.roster;
     state.data = res.data || {};
+    if (res.sheetName) $('rosterSheetLabel').textContent = res.sheetName;
     if (res.sheetUrl) setSheetLink(res.sheetUrl);
 
     const missing = state.days.filter(function (d) {

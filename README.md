@@ -102,6 +102,20 @@ npm run dev        # npx serve frontend -l 4173
 > ⚠ Google 登入不能在 iframe（例如 VS Code 預覽視窗）裡測試，
 > 請直接用瀏覽器開啟本機網址或部署後的網址。
 
+## 開發時の注意：後端は手動反映
+
+`frontend/` は GitHub へ push すれば自動で本番に反映されますが、
+**`apps-script/Code.gs` は Apps Script エディタへ手動で貼り直す必要があります**
+（clasp は使っていません）。片方だけ更新すると新しいフィールドが噛み合わず、
+「管理者なのに権限がない」といった症状が出ます。
+
+| 変更したもの | Apps Script への貼り直し |
+| --- | --- |
+| `frontend/` 配下 | 不要 |
+| `apps-script/Code.gs` | **必要**（再デプロイは不要） |
+| 管理者名簿・API_TOKEN 等 | 不要（スクリプト プロパティを編集） |
+| 従業員名簿の増減 | 不要（試算表を直接編集） |
+
 ## 部署
 
 前端走 **GitHub Pages**，後端是 Apps Script Web App，登入需要一組 Google

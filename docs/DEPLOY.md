@@ -153,7 +153,31 @@ const CONFIG = {
 };
 ```
 
-### B-3. 接手既有專案到 VS Code（用 clasp）
+### B-3. 改完 Code.gs 之後：手動貼回 Apps Script
+
+**本專案不使用 clasp**，`apps-script/Code.gs` 改完之後要自己貼回去：
+
+1. 在 VS Code 打開 `apps-script/Code.gs`，`Ctrl+A` → `Ctrl+C`
+2. Apps Script 編輯器裡 `Ctrl+A` → `Ctrl+V` → `Ctrl+S`
+3. **不需要重新部署**（Web App 網址不變，內容會立刻生效）
+
+> ⚠ **前端與後端會不同步。** 前端 push 到 GitHub 就自動上線，但後端要手動貼。
+> 只改了其中一邊的話，新加的欄位對不上，可能出現「管理員變成沒有權限」
+> 這類症狀。**動到 `Code.gs` 就一定要貼回去。**
+>
+> 判斷方法：Apps Script 編輯器執行 `whichSpreadsheet`，出來的內容跟
+> 本機的 `Code.gs` 對不上，就是還沒貼。
+
+需要下面這些情況才要改 Apps Script：
+
+| 改了什麼 | 要貼回 Apps Script？ |
+| --- | --- |
+| `frontend/` 底下任何檔案 | 不用（push 就上線） |
+| `apps-script/Code.gs` | **要** |
+| 管理員名單、API_TOKEN 等設定值 | 不用（改「指令碼屬性」即可） |
+| 員工名單（增減人員） | 不用（直接改試算表） |
+
+### B-4. （選用）用 clasp 自動同步
 
 ```bash
 npm install -g @google/clasp

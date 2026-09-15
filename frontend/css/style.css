@@ -456,3 +456,31 @@
   }
   .sheet-link-row a:active{ transform:translateY(2px); box-shadow:none; }
   .sheet-link-note{ font-size:10.5px; color:var(--ink-soft); }
+
+  /* ---------- 管理員兼員工：どちらの畫面に入るかを選ぶ ---------- */
+  .choose-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;
+  }
+  .choose-btn{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:6px; min-height:104px; padding:16px 10px; cursor:pointer;
+    background:var(--paper); border:1.8px solid var(--line-paper); border-radius:12px;
+    text-decoration:none; color:var(--ink);
+    font-family:'Noto Sans TC', sans-serif;
+    transition:transform .08s ease, border-color .12s ease;
+  }
+  .choose-btn:active{ transform:scale(.97); }
+  .choose-btn:hover{ border-color:var(--chili); }
+  .choose-btn .c-title{ font-size:14.5px; font-weight:900; }
+  .choose-btn .c-desc{
+    font-size:10.5px; line-height:1.5; color:var(--ink-soft); text-align:center;
+  }
+  /* 左＝員工（既定の入口）を主役に */
+  #chooseStaff{ background:var(--chili); border-color:var(--chili-dark); }
+  #chooseStaff .c-title{ color:var(--paper); }
+  #chooseStaff .c-desc{ color:#ffd9d0; }
+
+  .switch-link{
+    font-size:11px; font-weight:700; color:var(--chili-dark);
+    text-decoration:none; border-bottom:1px solid var(--chili-dark);
+  }

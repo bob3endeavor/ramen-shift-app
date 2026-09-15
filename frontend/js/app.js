@@ -88,12 +88,13 @@
   const authGate = $('authGate');
   const bindGate = $('bindGate');
   const adminGate = $('adminGate');
+  const chooseGate = $('chooseGate');
   const appMain = $('appMain');
   const submitBar = $('submitBar');
   const syncBanner = $('syncBanner');
 
   function showOnly(el) {
-    [authGate, bindGate, adminGate, appMain].forEach(function (node) {
+    [authGate, bindGate, adminGate, chooseGate, appMain].forEach(function (node) {
       node.style.display = node === el ? 'block' : 'none';
     });
     submitBar.style.display = el === appMain ? 'flex' : 'none';
@@ -197,8 +198,20 @@
     state.me = { name: who.name, role: who.roleTitle || '', email: who.email };
     // 後端が古く isAdmin を返さない場合も考慮（その場合 role==='admin' で来る）
     state.isAdmin = !!(who.isAdmin || who.role === 'admin');
+
+    // 管理員兼員工なら、どちらの畫面に入るかを選んでもらう
+    if (state.isAdmin) {
+      hideBanner();
+      $('chooseName').textContent = `${state.me.name}${state.me.role ? '（' + state.me.role + '）' : ''}`;
+      showOnly(chooseGate);
+      return;
+    }
+
     await enterApp();
   }
+
+  $('chooseStaff').onclick = function () { enterApp(); };
+  $('chooseSignOut').onclick = function () { Auth.signOut(); location.reload(); };
 
   /* ---------------- 首次登入：綁定姓名 ---------------- */
 

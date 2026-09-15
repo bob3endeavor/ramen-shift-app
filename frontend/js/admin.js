@@ -149,6 +149,8 @@
       }
 
       state.email = who.email;
+      // 員工でもある管理員（店長）には、員工畫面へ戻る導線を出す
+      if (who.role === 'employee') $('toStaffLink').style.display = 'inline';
       await enterAdmin();
     } finally {
       state.signingIn = false;
@@ -165,8 +167,12 @@
   async function enterAdmin() {
     $('meEmail').textContent = state.email;
     showOnly(adminMain);
-    await loadRoster();
-    await loadWeek();
+    showBanner('ok', '讀取資料中…');
+
+    // 名單と班表は依存関係がないので並列で取る。
+    // Apps Script は冷えていると 1 本あたり数秒かかるため、
+    // 直列だと画面が空のまま 10 秒以上待たされる。
+    await Promise.all([loadRoster(), loadWeek()]);
   }
 
   async function loadRoster() {

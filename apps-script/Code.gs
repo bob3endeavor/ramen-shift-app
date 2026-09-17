@@ -1178,7 +1178,9 @@ function handleLineEvent_(ev) {
     return;
   }
 
-  const rest = text.slice(cmd[0].length).trim();
+  // 「綁定 林欣霈」「綁定林欣霈」「綁定：林欣霈」どれでも姓名を取り出せるように、
+  // 合図の直後にある区切り記号（全角スペース・コロン・読点など）を落とす
+  const rest = text.slice(cmd[0].length).replace(/^[\s:：,，、。.\-－—]+/, '').trim();
   const displayName = lineDisplayName_(source.groupId, userId);
   const rosterSheet = rosterSheet_();
   const names = rosterSheet ? getRoster_(rosterSheet).map(function (p) { return p.name; }) : [];

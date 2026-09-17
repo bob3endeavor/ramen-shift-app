@@ -192,6 +192,9 @@
     if (!state.roster.length || !$('rosterSheetLabel').textContent) {
       await loadRoster();
     }
+
+    // 班表より後でよい（失敗しても班表の表示は生かしたい）
+    await loadReminder();
   }
 
   async function loadRoster() {
@@ -349,6 +352,206 @@
       </div>`;
     }).join('');
   }
+
+  /* ============================================================
+   * LINE 催繳提醒
+   * ------------------------------------------------------------
+   * 設定值（開關／星期／時段）存在 Script Properties，實際的排程是
+   * Apps Script 的時間驅動觸發器。這個面板只是把它包成店長也能改的樣子，
+   * 權限一樣由後端的 ADMIN_EMAILS 把關。
+   * ========================================================== */
+
+  const WEEKDAY_OPTIONS = [
+    { v: 1, label: '星期一' }, { v: 2, label: '星期二' }, { v: 3, label: '星期三' },
+    { v: 4, label: '星期四' }, { v: 5, label: '星期五' }, { v: 6, label: '星期六' },
+    { v: 7, label: '星期日' },
+  ];
+
+  function fillRemindSelects() {
+    $('remindWeekday').innerHTML = WEEKDAY_OPTIONS.map(function (o) {
+      return `<option value="${o.v}">${o.label}</option>`;
+    }).join('');
+    let hours = '';
+    for (let h = 0; h < 24; h++) hours += `<option value="${h}">${h} 時台</option>`;
+    $('remindHour').innerHTML = hours;
+  }
+
+  function weekdayLabel(v) {
+    const hit = WEEKDAY_OPTIONS.find(function (o) { return o.v === Number(v); });
+    return hit ? hit.label : '—';
+  }
+
+  function setRemindMsg(kind, text) {
+    const el = $('remindMsg');
+    el.className = 'remind-msg' + (kind ? ' ' + kind : '');
+    el.textContent = text || '';
+  }
+
+  function remindBusy(busy) {
+    ['remindSave', 'remindTestBtn'].forEach(function (id) { $(id).disabled = busy; });
+  }
+
+  async function loadReminder() {
+    fillRemindSelects();
+
+    if (isDemoMode) {
+      renderReminder({
+        config: { enabled: false, weekday: 5, hour: 12 },
+        line: { tokenSet: false, targetSet: false, webhookKeySet: false, webhookUrl: '', linkedCount: 0 },
+        mentionable: [],
+        preview: { ok: true, count: 2, dates: state.days.map(ymd), targets: [
+          { name: '林欣霈', missing: 7 }, { name: '王小明', missing: 2 },
+        ] },
+      });
+      remindBusy(true);
+      setRemindMsg('warn', '示範模式：設定不會真的儲存。');
+      return;
+    }
+
+    const res = await Auth.get('getReminderConfig');
+    if (!res.ok) {
+      // 後端がまだ古い（この機能を貼っていない）ときは責めずに案内だけ出す
+      $('remindStatus').textContent = '尚未啟用';
+      $('remindPreview').innerHTML = '';
+      $('remindSetup').innerHTML = res.error === 'unknown action'
+        ? '後端（Apps Script）還沒更新到含有這個功能的版本。請把 <code>apps-script/Code.gs</code> 重新貼上，並「部署 &gt; 管理部署作業」建立新版本。'
+        : '無法讀取提醒設定：' + Auth.describeError(res.error);
+      remindBusy(true);
+      return;
+    }
+    renderReminder(res);
+  }
+
+  function renderReminder(res) {
+    const cfg = res.config || {};
+    const line = res.line || {};
+
+    $('remindEnabled').checked = !!cfg.enabled;
+    $('remindWeekday').value = String(cfg.weekday || 5);
+    $('remindHour').value = String(cfg.hour == null ? 12 : cfg.hour);
+
+    $('remindStatus').textContent = cfg.enabled
+      ? `每${weekdayLabel(cfg.weekday)} ${cfg.hour} 時台`
+      : '目前未啟用';
+
+    renderRemindPreview(res.preview, res.mentionable || []);
+    renderRemindSetup(line, res);
+    remindBusy(false);
+  }
+
+  /** 現在の「未提出者」一覧（＝いま送ったら誰が名指しされるか） */
+  function renderRemindPreview(preview, mentionable) {
+    const box = $('remindPreview');
+    if (!preview) { box.innerHTML = ''; return; }
+
+    if (!preview.ok && preview.error === 'no_month_sheet_for_next_week') {
+      box.innerHTML = `<div class="remind-empty">下週所屬的月份分頁還沒建立，現在無法計算未提出名單。</div>`;
+      return;
+    }
+
+    const range = preview.dates && preview.dates.length
+      ? `${fmtMD(new Date(preview.dates[0] + 'T00:00:00'))}〜${fmtMD(new Date(preview.dates[preview.dates.length - 1] + 'T00:00:00'))}`
+      : '下週';
+
+    if (!preview.targets || !preview.targets.length) {
+      box.innerHTML = `<div class="remind-empty">✓ ${range} 全員都填完了，這週不會發出提醒。</div>`;
+      return;
+    }
+
+    const canMention = {};
+    mentionable.forEach(function (m) { canMention[m.name] = m.mentionable; });
+
+    box.innerHTML = `<div class="remind-preview-head">${range} 尚未填完：${preview.targets.length} 人</div>` +
+      preview.targets.map(function (t) {
+        const m = canMention[t.name];
+        return `<div class="remind-row">
+          <span class="rr-name">${t.name}</span>
+          <span class="rr-missing">還有 ${t.missing} 天沒填</span>
+          <span class="rr-mention${m ? ' on' : ''}">${m ? '@ 可點名' : '未連結 LINE'}</span>
+        </div>`;
+      }).join('');
+  }
+
+  /** LINE 側のセットアップがどこまで済んでいるかを出す */
+  function renderRemindSetup(line, res) {
+    const required = [
+      ['Channel access token', line.tokenSet],
+      ['提醒的 LINE 群組', line.targetSet],
+      ['Webhook 密鑰', line.webhookKeySet],
+    ];
+    const done = required.every(function (r) { return r[1]; });
+    const rows = required.concat([['LINE Login（員工自助連結）', !!line.loginReady]]);
+
+    let html = rows.map(function (r) {
+      return `<div class="setup-row"><span>${r[0]}</span><b class="${r[1] ? 'ok' : 'ng'}">${r[1] ? '已設定' : '未設定'}</b></div>`;
+    }).join('');
+
+    if (line.webhookUrl) {
+      html += `<div class="setup-hint">Webhook URL：<code class="wrap">${line.webhookUrl}</code></div>`;
+    }
+    if (!done) {
+      html += `<div class="setup-hint">設定步驟見 <code>docs/LINE-REMINDER.md</code>。前三項都「已設定」之後才能打開自動提醒。</div>`;
+    } else {
+      html += `<div class="setup-hint">
+        還沒連結 LINE 的人只會用姓名列出、不會被 @ 點名。目前已連結 ${line.linkedCount || 0} 人。<br>
+        ${line.loginReady
+          ? '請員工在員工頁按「連結 LINE 帳號」（LINE 的暱稱跟班表姓名不同也沒關係）。'
+          : '設定 LINE Login 之後，員工就能在員工頁自己按一顆按鈕完成連結；' +
+            '在那之前只能請他們在群組裡打「連携 你的姓名」。'}
+      </div>`;
+    }
+    if (res && res.lastSent) {
+      html += `<div class="setup-hint">上次送出：${new Date(res.lastSent).toLocaleString()}</div>`;
+    }
+    $('remindSetup').innerHTML = html;
+  }
+
+  $('remindSave').onclick = async function () {
+    remindBusy(true);
+    setRemindMsg('', '儲存中…');
+    const res = await Auth.post({
+      action: 'setReminderConfig',
+      enabled: $('remindEnabled').checked,
+      weekday: Number($('remindWeekday').value),
+      hour: Number($('remindHour').value),
+    });
+    remindBusy(false);
+
+    if (!res.ok) {
+      setRemindMsg('error', '⚠ ' + Auth.describeError(res.error));
+      return;
+    }
+    const cfg = res.config || {};
+    $('remindStatus').textContent = cfg.enabled
+      ? `每${weekdayLabel(cfg.weekday)} ${cfg.hour} 時台`
+      : '目前未啟用';
+    setRemindMsg('ok', cfg.enabled
+      ? `已設定：每${weekdayLabel(cfg.weekday)} ${cfg.hour} 時台自動提醒`
+      : '已關閉自動提醒');
+  };
+
+  $('remindTestBtn').onclick = async function () {
+    if (!confirm('現在就送一則提醒到 LINE 群組（群組成員都會看到）。要繼續嗎？')) return;
+
+    remindBusy(true);
+    setRemindMsg('', '傳送中…');
+    const res = await Auth.post({ action: 'sendReminderTest' });
+    remindBusy(false);
+
+    if (!res.ok) {
+      setRemindMsg('error', '⚠ 傳送失敗：' + Auth.describeError(res.error) +
+        (res.detail ? `（${res.detail}）` : ''));
+      return;
+    }
+    if (res.skipped === 'all_submitted') {
+      setRemindMsg('ok', '全員都填完了，所以沒有送出訊息。');
+    } else {
+      setRemindMsg('ok', res.mentionFailed
+        ? `已送出：點名 ${res.count} 人。（@ 提及被 LINE 退回，已改用純文字重送；多半是已離開群組的人還留在「LINE連携」分頁裡）`
+        : `已送出：點名 ${res.count} 人（其中 ${res.mentioned} 人有 @ 提及）`);
+    }
+    await loadReminder();
+  };
 
   /* ---------------- init ---------------- */
   await boot();

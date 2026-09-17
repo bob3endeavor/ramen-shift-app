@@ -143,6 +143,20 @@
         <span class="admin-badge">ADMIN</span>
         <a href="admin.html">你也是管理員 — 查看全員班表 →</a>
       </div>
+
+      <!-- LINE 連結（後端設定好 LINE Login 之後才會出現） -->
+      <div class="line-row" id="lineRow" style="display:none;">
+        <div class="line-info">
+          <span class="line-badge" id="lineBadge">LINE</span>
+          <div class="line-text">
+            <b id="lineStatus">尚未連結</b>
+            <span id="lineDesc">連結後，忘記填班表時 LINE 群組的提醒會直接 @ 你。</span>
+          </div>
+        </div>
+        <button class="btn-line" id="lineLinkBtn">連結 LINE 帳號</button>
+        <button class="btn-link" id="lineUnlinkBtn" style="display:none;">解除連結</button>
+        <p class="line-error" id="lineError"></p>
+      </div>
     </div>
 
     <!-- STEP 1: next week Mon-Sun picker -->

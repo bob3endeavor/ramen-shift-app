@@ -209,6 +209,9 @@
     state.me = { name: who.name, role: who.roleTitle || '', email: who.email };
     // 後端が古く isAdmin を返さない場合も考慮（その場合 role==='admin' で来る）
     state.isAdmin = !!(who.isAdmin || who.role === 'admin');
+    // LINE 連携（後端が対応していなければ両方 undefined → 導線を出さない）
+    state.lineLoginReady = !!who.lineLoginReady;
+    state.lineLinked = !!who.lineLinked;
 
     // 管理員兼員工なら、どちらの畫面に入るかを選んでもらう
     if (state.isAdmin) {
@@ -260,6 +263,15 @@
       return;
     }
     state.me = { name: res.name, role: res.roleTitle || '', email: Auth.profile.email };
+
+    // 綁定直後は whoami の結果が「未綁定」のままなので、LINE 連携の状態だけ
+    // 取り直す（失敗しても本題ではないので握りつぶす）
+    const who = await Auth.whoami();
+    if (who.ok) {
+      state.lineLoginReady = !!who.lineLoginReady;
+      state.lineLinked = !!who.lineLinked;
+    }
+
     await enterApp();
   };
 
@@ -284,6 +296,7 @@
     }
 
     $('adminLinkRow').style.display = state.isAdmin ? 'block' : 'none';
+    renderLineRow();
 
     $('weekNote').innerHTML =
       `開放申請下週班表：<b>${fmtMD(state.days[0])}（一）〜 ${fmtMD(state.days[6])}（日）</b>`;
@@ -299,6 +312,66 @@
     renderAll();
     loadMonthHours();
   }
+
+  /* ---------------- LINE 連結 ----------------
+   * userId は LINE Login（同じ provider の LINE Login チャネル）から取る。
+   * 自分の姓名は後端が Google ログインから割り出しているので、
+   * LINE の表示名が班表の姓名と違っていても関係ない。
+   */
+
+  function renderLineRow() {
+    const row = $('lineRow');
+    if (!isDemoMode && !state.lineLoginReady) { row.style.display = 'none'; return; }
+    row.style.display = 'block';
+
+    const linked = !!state.lineLinked;
+    $('lineStatus').textContent = linked ? '已連結 LINE' : '尚未連結 LINE';
+    $('lineDesc').textContent = linked
+      ? '忘記填班表時，群組的提醒訊息會直接 @ 你。'
+      : '連結後，忘記填班表時 LINE 群組的提醒會直接 @ 你。';
+    $('lineBadge').className = 'line-badge' + (linked ? ' on' : '');
+    $('lineLinkBtn').style.display = linked ? 'none' : 'block';
+    $('lineUnlinkBtn').style.display = linked ? 'inline-block' : 'none';
+    $('lineError').textContent = '';
+  }
+
+  $('lineLinkBtn').onclick = async function () {
+    if (isDemoMode) {
+      $('lineError').textContent = '示範模式無法連結 LINE。';
+      return;
+    }
+    const btn = $('lineLinkBtn');
+    btn.disabled = true;
+    btn.textContent = '準備中…';
+    $('lineError').textContent = '';
+
+    const res = await Auth.get('startLineLink');
+    if (!res.ok) {
+      btn.disabled = false;
+      btn.textContent = '連結 LINE 帳號';
+      $('lineError').textContent = Auth.describeError(res.error);
+      return;
+    }
+    // LINE の同意画面へ。戻り先は後端（/exec）で、そこで結果ページが出る。
+    location.href = res.url;
+  };
+
+  $('lineUnlinkBtn').onclick = async function () {
+    if (isDemoMode) return;
+    if (!confirm('解除連結後，提醒訊息就不會再 @ 你（但還是會列出你的姓名）。要解除嗎？')) return;
+
+    const btn = $('lineUnlinkBtn');
+    btn.disabled = true;
+    const res = await Auth.post({ action: 'unlinkLine' });
+    btn.disabled = false;
+
+    if (!res.ok) {
+      $('lineError').textContent = Auth.describeError(res.error);
+      return;
+    }
+    state.lineLinked = false;
+    renderLineRow();
+  };
 
   /* ---------------- 讀取本週資料 ---------------- */
 

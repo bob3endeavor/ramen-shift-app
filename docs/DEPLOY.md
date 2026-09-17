@@ -3,6 +3,9 @@
 這份文件涵蓋三件事：**Google OAuth 用戶端設定**、**Apps Script 後端部署**、
 **GitHub Pages 前端部署**。三個都設定完，Google 登入才會正常運作。
 
+> LINE 催繳提醒（每週自動點名未提出的人）是獨立的選用功能，設定步驟另見
+> [`LINE-REMINDER.md`](LINE-REMINDER.md)。
+
 > 只想先看 UI、還不想設定這些？把 `frontend/js/config.js` 保持預設
 > （`PASTE_...`）就會進入**示範模式**：跳過 Google 登入，用
 > `demo-data.js` 的假資料模擬一位員工與一位管理員，流程完全相同。
@@ -131,6 +134,10 @@
    設定完可在「專案設定 > 指令碼屬性 (Script Properties)」確認或修改，
    **改管理員名單不需要重新部署程式碼**。
 
+   > 要用 LINE 催繳提醒的話，這裡再多執行一次 `setupLineReminder()`
+   > （會多要一個「建立觸發器」的授權）。細節見
+   > [`LINE-REMINDER.md`](LINE-REMINDER.md)。
+
 6. 右上角「部署 (Deploy) > 新增部署作業」，類型選「網頁應用程式」：
    - 執行身分：**我**（指令碼要用你的權限寫試算表）
    - 誰可以存取：**任何人 (Anyone)**
@@ -187,6 +194,7 @@ const CONFIG = {
 | `apps-script/Code.gs` | **要** |
 | 管理員名單、API_TOKEN 等設定值 | 不用（改「指令碼屬性」即可） |
 | 員工名單（增減人員） | 不用（直接改試算表） |
+| LINE 提醒的星期／時段／開關 | 不用（在管理頁的「04 LINE 催繳提醒」改） |
 
 ### B-4. （選用）用 clasp 自動同步
 
@@ -318,3 +326,5 @@ http://localhost:4173/admin.html。
 | `sheet_or_date_not_found` | 目標日期所在月份的分頁（例如「9月排班班表」）還沒建立，或分頁命名不符規則 |
 | `staff_not_found` | 試算表 B 欄的姓名前後有多餘空格，或該月分頁少了這個人 |
 | 本月累計時數是 0 | 本月分頁還沒建立，或該分頁裡沒有你的姓名（畫面會標示原因） |
+| 管理頁的「04 LINE 催繳提醒」說後端沒這個功能 | `Code.gs` 貼回去之後忘了建立新版本的部署（B-3） |
+| LINE 提醒相關的錯誤（`line_*`） | 見 [`LINE-REMINDER.md`](LINE-REMINDER.md) 最後的對照表 |

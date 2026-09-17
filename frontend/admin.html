@@ -122,13 +122,53 @@
     </div>
 
     <!-- 員工 / Email 對照 -->
-    <div class="section" style="margin-bottom:28px;">
+    <div class="section">
       <div class="section-title"><span class="num">03</span><h2>員工帳號綁定狀態</h2><span class="sub" id="rosterSheetLabel"></span></div>
       <div class="roster-list" id="rosterList"></div>
       <div class="note">
         Email 是員工第一次 Google 登入時自動寫入試算表 C 欄的。
         顯示「尚未綁定」代表這位員工還沒登入過；你也可以直接在試算表 C 欄手動預填。
       </div>
+    </div>
+
+    <!-- LINE 催繳提醒 -->
+    <div class="section" style="margin-bottom:28px;">
+      <div class="section-title">
+        <span class="num">04</span><h2>LINE 催繳提醒</h2>
+        <span class="sub" id="remindStatus">讀取中…</span>
+      </div>
+
+      <div class="remind-card">
+        <label class="remind-switch">
+          <input type="checkbox" id="remindEnabled">
+          <span>每週自動在 LINE 群組提醒「下週還沒填完」的人</span>
+        </label>
+
+        <div class="remind-fields">
+          <label class="remind-field">
+            <span class="rf-label">星期</span>
+            <select id="remindWeekday"></select>
+          </label>
+          <label class="remind-field">
+            <span class="rf-label">時段</span>
+            <select id="remindHour"></select>
+          </label>
+        </div>
+        <p class="remind-hint" id="remindHint">
+          只要下週七天裡有任何一格沒填就會被點名（填「排休」也算填了）。
+        </p>
+
+        <button class="btn-primary" id="remindSave">儲存設定</button>
+        <p class="remind-msg" id="remindMsg"></p>
+      </div>
+
+      <div class="remind-preview" id="remindPreview"></div>
+
+      <div class="remind-actions">
+        <button class="btn-link" id="remindTestBtn">立刻試送到 LINE 群組</button>
+      </div>
+
+      <div class="note" id="remindSetup"></div>
     </div>
   </div>
 </div>

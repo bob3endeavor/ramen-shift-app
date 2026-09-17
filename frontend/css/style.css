@@ -484,3 +484,99 @@
     font-size:11px; font-weight:700; color:var(--chili-dark);
     text-decoration:none; border-bottom:1px solid var(--chili-dark);
   }
+
+  /* ---------- 管理頁：LINE 催繳提醒 ---------- */
+  .remind-card{
+    background:var(--paper-2); border:1.5px solid var(--line-paper);
+    border-radius:10px; padding:13px 14px 14px;
+  }
+  .remind-switch{
+    display:flex; align-items:center; gap:9px; cursor:pointer;
+    font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.5;
+  }
+  .remind-switch input{
+    width:18px; height:18px; flex:0 0 18px; accent-color:var(--chili); cursor:pointer;
+  }
+  .remind-fields{ display:flex; gap:10px; margin:12px 0 0; }
+  .remind-field{
+    flex:1; display:flex; flex-direction:column; gap:4px;
+    background:var(--paper); border:1.5px solid var(--line-paper);
+    border-radius:9px; padding:8px 10px;
+  }
+  .remind-field .rf-label{
+    font-family:'DotGothic16', monospace; font-size:9.5px;
+    letter-spacing:.08em; color:var(--ink-soft);
+  }
+  .remind-field select{
+    appearance:none; -webkit-appearance:none; border:none; background:transparent;
+    width:100%; font-family:'Noto Sans TC', sans-serif; font-size:14px; font-weight:700;
+    color:var(--ink); cursor:pointer;
+  }
+  .remind-hint{ font-size:10.5px; line-height:1.6; color:var(--ink-soft); margin:9px 0 12px; }
+  .remind-msg{ font-size:11.5px; line-height:1.6; margin:9px 0 0; min-height:1em; color:var(--ink-soft); }
+  .remind-msg.ok{ color:var(--negi); font-weight:700; }
+  .remind-msg.warn{ color:var(--chili-dark); }
+  .remind-msg.error{ color:var(--chili); font-weight:700; }
+
+  .remind-preview{ margin-top:12px; display:flex; flex-direction:column; gap:5px; }
+  .remind-preview-head{
+    font-size:11px; font-weight:700; color:var(--ink-soft); margin-bottom:2px;
+  }
+  .remind-preview .remind-row{
+    display:flex; align-items:center; gap:10px;
+    background:var(--paper-2); border:1.4px solid var(--line-paper);
+    border-radius:8px; padding:8px 11px; font-size:12px;
+  }
+  .remind-preview .rr-name{ font-weight:700; flex:0 0 84px; }
+  .remind-preview .rr-missing{ font-size:10.5px; color:var(--chili-dark); flex:1; }
+  .remind-preview .rr-mention{
+    font-family:'DotGothic16', monospace; font-size:9.5px; letter-spacing:.06em;
+    padding:2px 7px; border-radius:3px; color:var(--ink-soft);
+    border:1px dashed var(--line-paper);
+  }
+  .remind-preview .rr-mention.on{
+    color:#fff; background:var(--negi); border-color:var(--negi);
+  }
+  .remind-empty{
+    font-size:11.5px; color:var(--ink-soft); background:var(--paper-2);
+    border:1.4px dashed var(--line-paper); border-radius:8px; padding:10px 12px;
+  }
+
+  .remind-actions{ display:flex; justify-content:flex-end; }
+  .remind-actions .btn-link{ color:var(--chili-dark); }
+
+  .setup-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:3px 0; font-size:11px;
+  }
+  .setup-row b.ok{ color:var(--negi); }
+  .setup-row b.ng{ color:var(--chili); }
+  .setup-hint{ margin-top:7px; padding-top:7px; border-top:1px dashed var(--line-paper); }
+  .setup-hint code.wrap{ word-break:break-all; }
+
+  /* ---------- 員工頁：LINE 連結 ---------- */
+  .line-row{
+    margin-top:10px; padding-top:10px;
+    border-top:1.4px dashed var(--line-paper);
+  }
+  .line-info{ display:flex; align-items:flex-start; gap:9px; }
+  .line-badge{
+    flex:0 0 auto; font-family:'DotGothic16', monospace; font-size:9.5px;
+    letter-spacing:.08em; padding:3px 7px; border-radius:4px; margin-top:1px;
+    color:var(--ink-soft); background:var(--paper-2);
+    border:1.2px solid var(--line-paper);
+  }
+  .line-badge.on{ color:#fff; background:#06c755; border-color:#06c755; }
+  .line-text{ display:flex; flex-direction:column; gap:2px; }
+  .line-text b{ font-size:12.5px; color:var(--ink); }
+  .line-text span{ font-size:10.5px; line-height:1.6; color:var(--ink-soft); }
+  .btn-line{
+    display:block; width:100%; margin-top:10px; cursor:pointer;
+    background:#06c755; color:#fff; border:none; border-radius:9px;
+    padding:11px 18px; font-family:'Noto Sans TC', sans-serif;
+    font-weight:700; font-size:13px; box-shadow:0 3px 0 #05a648;
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  .btn-line:active{ transform:translateY(2px); box-shadow:0 1px 0 #05a648; }
+  .btn-line:disabled{ background:#c8bfa9; box-shadow:none; cursor:not-allowed; }
+  .line-error{ font-size:11px; color:var(--chili); margin:8px 0 0; }

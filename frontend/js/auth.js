@@ -39,6 +39,19 @@ const Auth = (function () {
     sheet_or_date_not_found: '試算表裡還沒有這個日期所屬的月份分頁。',
     end_before_start: '下班時間必須晚於上班時間。',
     busy_try_again: '系統忙碌中，請稍後再試一次。',
+    // LINE 催繳提醒
+    line_token_missing: '後端還沒設定 LINE 的 Channel access token。',
+    line_target_missing: '還不知道要發到哪個 LINE 群組（請先把官方帳號拉進群組，並在群組裡打「連携」）。',
+    line_request_failed: '連不上 LINE 伺服器，請稍後再試。',
+    line_api_400: 'LINE 退回了這則訊息（400）：多半是群組 ID 或 @提及 的對象不正確。',
+    line_api_401: 'LINE 的 Channel access token 無效或已過期（401）。',
+    line_api_403: 'LINE 拒絕了這次發送（403）：請確認頻道已啟用 Messaging API。',
+    line_api_429: '這個月的 LINE 訊息額度已用完（429）。',
+    no_month_sheet_for_next_week: '下週所屬的月份分頁還沒建立，無法計算未提出名單。',
+    line_login_not_configured: '後端還沒設定 LINE Login，請聯絡店長。',
+    webapp_url_unknown: '後端不知道自己的網址，請店長在 Script Properties 補上 WEBAPP_URL。',
+    bad_weekday: '星期的設定值不正確。',
+    bad_hour: '時段的設定值不正確。',
   };
 
   const state = {

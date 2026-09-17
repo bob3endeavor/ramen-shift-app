@@ -41,7 +41,7 @@ const Auth = (function () {
     busy_try_again: '系統忙碌中，請稍後再試一次。',
     // LINE 催繳提醒
     line_token_missing: '後端還沒設定 LINE 的 Channel access token。',
-    line_target_missing: '還不知道要發到哪個 LINE 群組（請先把官方帳號拉進群組，並在群組裡打「連携」）。',
+    line_target_missing: '還不知道要發到哪個 LINE 群組（請先把官方帳號拉進群組，並在群組裡傳「綁定」）。',
     line_request_failed: '連不上 LINE 伺服器，請稍後再試。',
     line_api_400: 'LINE 退回了這則訊息（400）：多半是群組 ID 或 @提及 的對象不正確。',
     line_api_401: 'LINE 的 Channel access token 無效或已過期（401）。',

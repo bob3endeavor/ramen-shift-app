@@ -96,7 +96,7 @@ ramen-shift-app/
 `API_TOKEN`）：
 
 - `POST ?line={LINE_WEBHOOK_KEY}` — LINE 的 Webhook。用來記住群組 ID，
-  以及處理群組裡的「連携」指令。
+  以及處理群組裡的「綁定」指令。
 - `GET ?code=...&state=...` — LINE Login 的 callback。`state` 是後端自己用
   HMAC 簽過的（裡面有姓名與 nonce），所以能確認「這是誰的連結」。
 
@@ -114,7 +114,7 @@ ramen-shift-app/
   沒連結的人只列出姓名，但不會因此漏掉。對照表在試算表的 `LINE連携` 分頁。
   - LINE Login 頻道**必須跟 Messaging API 頻道在同一個 provider 底下**，
     否則拿到的 userId 對不上（連結完成畫面會警告）。
-  - 備援：在群組裡打「連携 你的姓名」也可以（LINE Login 沒設定時用）。
+  - 備援：在群組裡打「綁定 你的姓名」也可以（LINE Login 沒設定時用）。
 - LINE 頻道、Webhook、群組登記的完整步驟見
   [`docs/LINE-REMINDER.md`](docs/LINE-REMINDER.md)。
 
@@ -183,7 +183,7 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
 - **LINE 提醒也吃「月份分頁要先建立好」這個限制**：下週的分頁不存在時
   不會發訊息，只會在執行記錄留下 `no_month_sheet_for_next_week`。
 - **LINE 的 @提及需要 userId**，靠員工自己按「連結 LINE 帳號」（LINE Login）
-  或在群組裡打「連携」取得。沒連結的人一樣會被點名，只是沒有 @。
+  或在群組裡打「綁定」取得。沒連結的人一樣會被點名，只是沒有 @。
   第三方沒有辦法代替本人取得 userId（`members/ids` 端點限認證帳號才能用）。
 - **Webhook 沒有驗簽章**。Apps Script 讀不到 HTTP 標頭，所以 `x-line-signature`
   無法驗證，改用網址上的 `?line={LINE_WEBHOOK_KEY}` 當作合言葉。

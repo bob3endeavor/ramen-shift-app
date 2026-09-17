@@ -612,8 +612,8 @@ function round1_(n) { return Math.round(n * 10) / 10; }
  * 群組 ID 與「誰是誰」的對照都靠 Webhook 蒐集：把
  *   {網頁應用程式網址}?line={LINE_WEBHOOK_KEY}
  * 設成 LINE 頻道的 Webhook URL，再把官方帳號拉進群組，群組裡任何人打
- *   連携          → 記住這個群組，並用 LINE 暱稱自動對應員工姓名
- *   連携 林欣霈   → 指定自己是名單上的哪一位（暱稱對不上時用這個）
+ *   綁定          → 記住這個群組，並用 LINE 暱稱自動對應員工姓名
+ *   綁定 林欣霈   → 指定自己是名單上的哪一位（暱稱對不上時用這個）
  * 對照表存在試算表的「LINE連携」分頁，之後 @提及（mention）就靠它。
  * ========================================================== */
 
@@ -1149,10 +1149,10 @@ function handleLineEvent_(ev) {
   if (ev.type === 'join' && source.type === 'group') {
     rememberGroup_(source.groupId);
     lineReply_(ev.replyToken, [
-      'ありがとうございます。このグループを希望シフトのリマインド先として登録しました。',
+      '謝謝邀請！以後忘記填希望排班的人，我會在這個群組提醒。',
       '',
-      '@メンションで名指しできるように、メンバーはこのグループで「連携」と送ってください。',
-      'LINE の名前が班表の姓名と違う場合は「連携 林欣霈」のように姓名も付けてください。',
+      '想被 @ 點名的話，請在這個群組傳「綁定」兩個字。',
+      'LINE 暱稱跟班表姓名不一樣的話，請傳「綁定 林欣霈」這樣加上姓名。',
     ].join('\n'));
     return;
   }
@@ -1165,14 +1165,16 @@ function handleLineEvent_(ev) {
   if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
 
   const text = String(ev.message.text || '').trim();
-  const cmd = text.match(/^(連携|連攜|綁定)/);
+  // 台湾の店舗なので案内は「綁定」に統一。連結/連携 などは旧案内を見た人や
+  // 日本語入力の人のための別名（先に長いものを並べて部分一致を防ぐ）。
+  const cmd = text.match(/^(綁定|連結|連携|連攜|link)/i);
   if (!cmd) return;   // それ以外の雑談には一切反応しない
 
   if (source.type === 'group') rememberGroup_(source.groupId);
 
   const userId = source.userId;
   if (!userId) {
-    lineReply_(ev.replyToken, 'プロフィールを取得できませんでした。しばらくしてからもう一度お試しください。');
+    lineReply_(ev.replyToken, '抱歉，讀不到你的帳號資訊，請稍後再試一次。');
     return;
   }
 
@@ -1185,7 +1187,7 @@ function handleLineEvent_(ev) {
   if (rest) {
     matched = names.indexOf(rest) !== -1 ? rest : '';
     if (!matched) {
-      lineReply_(ev.replyToken, '班表に「' + rest + '」という姓名が見つかりませんでした。\n班表どおりの姓名で「連携 林欣霈」のように送ってください。');
+      lineReply_(ev.replyToken, '班表上找不到「' + rest + '」這個姓名。\n請照班表上的姓名，傳「綁定 林欣霈」這樣的格式。');
       return;
     }
   } else {
@@ -1197,8 +1199,8 @@ function handleLineEvent_(ev) {
   saveLineLink_(userId, displayName, matched);
 
   lineReply_(ev.replyToken, matched
-    ? '「' + matched + '」として登録しました。未提出のときは名指しでお知らせします。'
-    : 'LINE の名前「' + (displayName || '?') + '」が班表の姓名と一致しませんでした。\n「連携 林欣霈」のように、班表どおりの姓名を付けてもう一度送ってください。');
+    ? '已經把你設定為「' + matched + '」。以後還沒填班表的時候會直接 @ 你。'
+    : '你的 LINE 暱稱「' + (displayName || '?') + '」跟班表上的姓名對不起來。\n請照班表上的姓名，傳「綁定 林欣霈」這樣再試一次。');
 }
 
 function rememberGroup_(groupId) {
@@ -1293,7 +1295,7 @@ function handleSendReminderTest_(who, body) {
 /* ============================================================
  * LINE Login で「員工 ↔ LINE userId」を確定させる
  * ------------------------------------------------------------
- * 群組で「連携 姓名」と打ってもらう方式は、LINE の表示名と班表の姓名が
+ * 群組で「綁定 姓名」と打ってもらう方式は、LINE の表示名と班表の姓名が
  * 違う人に自分の姓名を正しく入力させる必要があった。こちらは
  *
  *   すでに Google ログイン済み（＝後端が姓名を知っている）本人が

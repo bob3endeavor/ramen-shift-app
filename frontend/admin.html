@@ -170,6 +170,36 @@
 
       <div class="note" id="remindSetup"></div>
     </div>
+
+    <!-- 提交通知 -->
+    <div class="section" style="margin-bottom:28px;">
+      <div class="section-title">
+        <span class="num">05</span><h2>提交通知</h2>
+        <span class="sub" id="notifyStatus">讀取中…</span>
+      </div>
+
+      <div class="remind-card">
+        <div class="line-info">
+          <span class="line-badge" id="notifyBadge">LINE</span>
+          <div class="line-text">
+            <b id="notifyState">尚未連結</b>
+            <span id="notifyDesc">員工按下「送出班表」時，用官方帳號通知你的個人 LINE。</span>
+          </div>
+        </div>
+        <button class="btn-line" id="notifyLinkBtn">連結我的 LINE</button>
+        <div class="remind-actions" id="notifyActions" style="display:none;">
+          <button class="btn-link" id="notifyTestBtn">發送測試通知</button>
+          <button class="btn-link" id="notifyUnlinkBtn">解除</button>
+        </div>
+        <p class="remind-msg" id="notifyMsg"></p>
+      </div>
+
+      <div class="note">
+        ⚠ 你必須先把這個官方帳號<b>加為好友</b>，訊息才會送到。
+        沒加好友的話 LINE 不會報錯，只是訊息默默不會出現，
+        所以連結完請務必按一次「發送測試通知」確認。
+      </div>
+    </div>
   </div>
 </div>
 

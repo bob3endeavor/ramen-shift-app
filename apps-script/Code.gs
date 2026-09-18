@@ -1065,6 +1065,9 @@ function setupLineReminder() {
     LINE_LOGIN_CHANNEL_ID: 'PASTE_LINE_LOGIN_CHANNEL_ID',
     LINE_LOGIN_CHANNEL_SECRET: 'PASTE_LINE_LOGIN_CHANNEL_SECRET',
     LINE_LINK_STATE_SECRET: Utilities.getUuid().replace(/-/g, ''),
+    // 提出通知の宛先（管理頁の「連結我的 LINE」で自動的に入る）
+    LINE_ADMIN_USER_ID: LINE_UNSET,
+    LINE_ADMIN_EMAIL: LINE_UNSET,
     // 「デプロイを管理」に出ている /exec で終わる URL を入れる。
     // エディタから実行すると getUrl() は /dev しか返せないため、基本的に手入力。
     WEBAPP_URL: 'PASTE_YOUR_EXEC_URL',
@@ -1262,6 +1265,12 @@ function handleGetReminderConfig_(who) {
       loginReady: lineLoginReady_(),
       callbackUrl: webAppUrl_(),
     },
+    // 提出通知（店主の個人 LINE 宛て）。userId 自体は返さない。
+    notify: {
+      linked: isSet_(adminNotifyUserId_()),
+      email: isSet_(adminNotifyEmail_()) ? adminNotifyEmail_() : '',
+      pending: Object.keys(readSubmitPending_()).length,
+    },
     // userId そのものは返さない（管理頁に出す必要がない）
     mentionable: (preview.targets || []).map(function (t) {
       return { name: t.name, mentionable: !!linked[t.name] };
@@ -1417,9 +1426,21 @@ function verifyState_(token) {
  * 1. 認可 URL を発行する
  * ---------------------------------------------------------- */
 
-/** GET ?action=startLineLink（員工本人のみ） */
-function handleStartLineLink_(who) {
-  if (who.role !== 'employee') return jsonOut_({ ok: false, error: 'employee_only' });
+/**
+ * GET ?action=startLineLink[&kind=admin]
+ *
+ * kind 省略 … 員工本人が自分の userId を登録する（@提及 用）
+ * kind=admin … 管理員が「提出通知の宛先」として自分の userId を登録する。
+ *              こちらは班表の姓名と無関係なので、員工でなくても通す。
+ */
+function handleStartLineLink_(who, p) {
+  const kind = (p && p.kind === 'admin') ? 'admin' : 'employee';
+
+  if (kind === 'admin') {
+    if (!who.isAdmin) return jsonOut_({ ok: false, error: 'admin_only' });
+  } else if (who.role !== 'employee') {
+    return jsonOut_({ ok: false, error: 'employee_only' });
+  }
   if (!lineLoginReady_()) return jsonOut_({ ok: false, error: 'line_login_not_configured' });
 
   const redirectUri = webAppUrl_();
@@ -1431,7 +1452,9 @@ function handleStartLineLink_(who) {
 
   const nonce = Utilities.getUuid().replace(/-/g, '');
   const state = signState_({
+    kind: kind,
     name: who.name,
+    email: who.email,
     nonce: nonce,
     exp: Date.now() + LINE_STATE_TTL_MS,
   });
@@ -1477,6 +1500,20 @@ function handleLineLinkCallback_(p) {
   if (!claims.ok) {
     return lineLinkPage_(false, '連結失敗',
       '無法驗證 LINE 的登入憑證（' + claims.error + '）。請重新操作一次。');
+  }
+
+  // 管理員が「提出通知の宛先」を登録しにきた場合。班表の姓名とは無関係なので
+  // 対照表ではなく Script Properties に入れる。
+  if (st.kind === 'admin') {
+    props_().setProperties({
+      LINE_ADMIN_USER_ID: claims.userId,
+      LINE_ADMIN_EMAIL: st.email || '',
+    }, false);
+    return lineLinkPage_(true, '通知設定完成',
+      '員工送出希望排班時，會通知到你的 LINE' +
+      (claims.displayName ? '（' + claims.displayName + '）' : '') + '。',
+      '請確認你已經把這個官方帳號「加為好友」，否則訊息不會送達。' +
+      '加好友之後，回管理頁按「發送測試通知」確認真的收得到。');
   }
 
   const saved = linkLineUser_(st.name, claims.userId, claims.displayName);
@@ -1704,7 +1741,7 @@ function doGet(e) {
     if (action === 'getMonthHours') return handleGetMonthHours_(who, p);
     if (action === 'getAdminRoster') return handleGetAdminRoster_(who);
     if (action === 'getReminderConfig') return handleGetReminderConfig_(who);
-    if (action === 'startLineLink') return handleStartLineLink_(who);
+    if (action === 'startLineLink') return handleStartLineLink_(who, p);
 
     return jsonOut_({ ok: false, error: 'unknown action' });
   } catch (err) {
@@ -1946,6 +1983,177 @@ function handleGetAdminRoster_(who) {
 }
 
 /* ============================================================
+ * 提出通知（員工がシフトを出したら店主の個人 LINE に知らせる）
+ * ------------------------------------------------------------
+ * シフトは「確認設定」を押すたびに 1 日分ずつ書き込まれるので、
+ * 書き込みのたびに送ると 7 日分で 7 通になる。そこで
+ *
+ *   書き込み時 … 誰が何日分いじったかを数えておくだけ（送らない）
+ *   「送出班表」… 溜まった件数をまとめて 1 通だけ送る
+ *
+ * という分担にしてある。溜まっている件数が 0 のときは送らないので、
+ * ボタンを二度押ししても通知は重複しない。
+ *
+ * 送り先は Script Properties の LINE_ADMIN_USER_ID。管理頁の
+ * 「連結我的 LINE」（= LINE Login を kind:'admin' で通したもの）で入る。
+ *
+ * ⚠ push は**相手が公式アカウントを友だち追加していないと届かない**。
+ * しかも届かなくても LINE は 200 を返すので、コード側では失敗を検知
+ * できない。だから管理頁にテスト送信ボタンを置いてある。
+ * ========================================================== */
+
+const SUBMIT_PENDING_KEY = 'SUBMIT_PENDING';   // {"姓名": 件数} の JSON
+
+function adminNotifyUserId_() { return (props_().getProperty('LINE_ADMIN_USER_ID') || '').trim(); }
+function adminNotifyEmail_() { return (props_().getProperty('LINE_ADMIN_EMAIL') || '').trim(); }
+
+/* ------------------------------------------------------------
+ * 未通知件数のカウンタ
+ * ---------------------------------------------------------- */
+
+function readSubmitPending_() {
+  try {
+    return JSON.parse(props_().getProperty(SUBMIT_PENDING_KEY) || '{}') || {};
+  } catch (err) {
+    return {};
+  }
+}
+
+/**
+ * 1 日分書き込むたびに +1。ここでは送らない。
+ * 同時書き込みで数え落とさないようロックを取るが、通知はあくまで
+ * 「おまけ」なので、ロックが取れなければ黙って諦める（班表の
+ * 書き込み自体を失敗させない）。
+ */
+function bumpSubmitPending_(name) {
+  if (!name || !isSet_(adminNotifyUserId_())) return;
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return;
+  try {
+    const pending = readSubmitPending_();
+    pending[name] = (Number(pending[name]) || 0) + 1;
+    props_().setProperty(SUBMIT_PENDING_KEY, JSON.stringify(pending));
+  } catch (err) {
+    console.error('bumpSubmitPending_ failed: ' + err);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 溜まっていた件数を取り出して 0 に戻す */
+function takeSubmitPending_(name) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return 0;
+  try {
+    const pending = readSubmitPending_();
+    const count = Number(pending[name]) || 0;
+    if (count) {
+      delete pending[name];
+      props_().setProperty(SUBMIT_PENDING_KEY, JSON.stringify(pending));
+    }
+    return count;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------------------------------------------------------
+ * 送信
+ * ---------------------------------------------------------- */
+
+/** 店主の個人 LINE に 1 通送る */
+function pushToAdmin_(text) {
+  const to = adminNotifyUserId_();
+  if (!isSet_(to)) return { ok: false, error: 'admin_line_not_linked' };
+  return lineApi_(LINE_PUSH_URL, { to: to, messages: [{ type: 'text', text: text }] });
+}
+
+/**
+ * POST { action:'notifySubmit' }（員工本人のみ）
+ * 「送出班表」を押したときに呼ばれる。未通知の変更が無ければ何もしない。
+ */
+function handleNotifySubmit_(who, body) {
+  if (who.role !== 'employee') return jsonOut_({ ok: false, error: 'employee_only' });
+  if (!isSet_(adminNotifyUserId_())) return jsonOut_({ ok: true, skipped: 'admin_not_linked' });
+
+  const count = takeSubmitPending_(who.name);
+  if (!count) return jsonOut_({ ok: true, skipped: 'no_changes' });
+
+  const dates = (body && body.dates ? String(body.dates) : '')
+    .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const range = dates.length
+    ? '（' + mdLabel_(dates[0]) + '〜' + mdLabel_(dates[dates.length - 1]) + '）'
+    : '';
+
+  const text = [
+    '📝 ' + who.name + ' 送出了希望排班' + range + '。',
+    '這次改了 ' + count + ' 天，請確認。',
+    isSet_(appUrl_()) ? '👉 ' + adminPageUrl_() : '',
+  ].filter(Boolean).join('\n');
+
+  const sent = pushToAdmin_(text);
+  if (!sent.ok) {
+    // 送れなかった分は戻しておく（次の「送出班表」でまとめて通知される）
+    bumpSubmitPendingBy_(who.name, count);
+    return jsonOut_({ ok: false, error: sent.error, detail: sent.detail });
+  }
+  return jsonOut_({ ok: true, sent: true, count: count });
+}
+
+/** 送信に失敗したぶんを数え戻す */
+function bumpSubmitPendingBy_(name, count) {
+  if (!name || !count) return;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return;
+  try {
+    const pending = readSubmitPending_();
+    pending[name] = (Number(pending[name]) || 0) + count;
+    props_().setProperty(SUBMIT_PENDING_KEY, JSON.stringify(pending));
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** APP_URL から管理頁の URL を組み立てる（index.html → admin.html） */
+function adminPageUrl_() {
+  const url = appUrl_();
+  if (!isSet_(url)) return '';
+  return url.indexOf('index.html') !== -1
+    ? url.replace('index.html', 'admin.html')
+    : url.replace(/\/?$/, '/') + 'admin.html';
+}
+
+/* ------------------------------------------------------------
+ * 管理頁 API
+ * ---------------------------------------------------------- */
+
+/** POST { action:'testAdminNotify' }（管理員限定） */
+function handleTestAdminNotify_(who) {
+  if (!who.isAdmin) return jsonOut_({ ok: false, error: 'admin_only' });
+  if (!isSet_(adminNotifyUserId_())) return jsonOut_({ ok: false, error: 'admin_line_not_linked' });
+
+  const sent = pushToAdmin_([
+    '🔔 這是測試通知。',
+    '看得到這則訊息，代表員工送出排班時你會收到通知。',
+    '看不到的話，請確認你已經把這個官方帳號加為好友。',
+  ].join('\n'));
+
+  if (!sent.ok) return jsonOut_({ ok: false, error: sent.error, detail: sent.detail });
+  return jsonOut_({ ok: true });
+}
+
+/** POST { action:'unlinkAdminNotify' }（管理員限定） */
+function handleUnlinkAdminNotify_(who) {
+  if (!who.isAdmin) return jsonOut_({ ok: false, error: 'admin_only' });
+  props_().setProperties({
+    LINE_ADMIN_USER_ID: LINE_UNSET,
+    LINE_ADMIN_EMAIL: LINE_UNSET,
+  }, false);
+  return jsonOut_({ ok: true });
+}
+
+/* ============================================================
  * doPost
  * ========================================================== */
 
@@ -1989,6 +2197,9 @@ function doPost(e) {
     if (action === 'linkAccount') return handleLinkAccount_(who, body);
     if (action === 'submitShift') return handleSubmitShift_(who, body);
     if (action === 'unlinkLine') return handleUnlinkLine_(who);
+    if (action === 'notifySubmit') return handleNotifySubmit_(who, body);
+    if (action === 'testAdminNotify') return handleTestAdminNotify_(who);
+    if (action === 'unlinkAdminNotify') return handleUnlinkAdminNotify_(who);
     if (action === 'setReminderConfig') return handleSetReminderConfig_(who, body);
     if (action === 'sendReminderTest') return handleSendReminderTest_(who, body);
 
@@ -2068,5 +2279,10 @@ function handleSubmitShift_(who, body) {
   }
 
   loc.sheet.getRange(person.row, loc.col).setValue(value);
+
+  // 通知はここでは送らない。「送出班表」でまとめて 1 通にするため、
+  // 何日分いじったかだけ数えておく（notifySubmit が取り出して送る）。
+  bumpSubmitPending_(who.name);
+
   return jsonOut_({ ok: true, name: who.name });
 }

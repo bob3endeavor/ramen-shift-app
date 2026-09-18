@@ -417,6 +417,7 @@
         ? '後端（Apps Script）還沒更新到含有這個功能的版本。請把 <code>apps-script/Code.gs</code> 重新貼上，並「部署 &gt; 管理部署作業」建立新版本。'
         : '無法讀取提醒設定：' + Auth.describeError(res.error);
       remindBusy(true);
+      renderNotify(null);
       return;
     }
     renderReminder(res);
@@ -436,6 +437,7 @@
 
     renderRemindPreview(res.preview, res.mentionable || []);
     renderRemindSetup(line, res);
+    renderNotify(res.notify);
     remindBusy(false);
   }
 
@@ -557,6 +559,81 @@
         : `已送出：點名 ${res.count} 人（其中 ${res.mentioned} 人有 @ 提及）`);
     }
     await loadReminder();
+  };
+
+  /* ============================================================
+   * 提交通知（員工が送出したら店主の個人 LINE に届く）
+   * ------------------------------------------------------------
+   * 宛先は LINE Login で取った店主自身の userId。班表の姓名とは無関係
+   * なので、員工の連結とは別枠（Script Properties）で持っている。
+   * ========================================================== */
+
+  function setNotifyMsg(kind, text) {
+    const el = $('notifyMsg');
+    el.className = 'remind-msg' + (kind ? ' ' + kind : '');
+    el.textContent = text || '';
+  }
+
+  function renderNotify(notify) {
+    const linked = !!(notify && notify.linked);
+
+    $('notifyStatus').textContent = linked ? '已開啟' : '未設定';
+    $('notifyState').textContent = linked ? '已連結，會通知到你的 LINE' : '尚未連結';
+    $('notifyDesc').textContent = linked && notify.email
+      ? `目前的收件帳號：${notify.email}`
+      : '員工按下「送出班表」時，用官方帳號通知你的個人 LINE。';
+    $('notifyBadge').className = 'line-badge' + (linked ? ' on' : '');
+    $('notifyLinkBtn').style.display = linked ? 'none' : 'block';
+    $('notifyActions').style.display = linked ? 'flex' : 'none';
+  }
+
+  $('notifyLinkBtn').onclick = async function () {
+    if (isDemoMode) { setNotifyMsg('warn', '示範模式無法連結 LINE。'); return; }
+
+    const btn = $('notifyLinkBtn');
+    btn.disabled = true;
+    btn.textContent = '準備中…';
+    setNotifyMsg('', '');
+
+    const res = await Auth.get('startLineLink', { kind: 'admin' });
+    if (!res.ok) {
+      btn.disabled = false;
+      btn.textContent = '連結我的 LINE';
+      setNotifyMsg('error', '⚠ ' + Auth.describeError(res.error));
+      return;
+    }
+    location.href = res.url;
+  };
+
+  $('notifyTestBtn').onclick = async function () {
+    if (isDemoMode) return;
+    $('notifyTestBtn').disabled = true;
+    setNotifyMsg('', '傳送中…');
+
+    const res = await Auth.post({ action: 'testAdminNotify' });
+    $('notifyTestBtn').disabled = false;
+
+    if (!res.ok) {
+      setNotifyMsg('error', '⚠ ' + Auth.describeError(res.error) +
+        (res.detail ? `（${res.detail}）` : ''));
+      return;
+    }
+    // push は「友だちでない相手」にも 200 を返してしまうので、
+    // 送れたことではなく「実際に届いたか」を本人に確かめてもらう
+    setNotifyMsg('ok', '已送出。請打開 LINE 確認有沒有收到；沒收到的話代表還沒加這個官方帳號為好友。');
+  };
+
+  $('notifyUnlinkBtn').onclick = async function () {
+    if (isDemoMode) return;
+    if (!confirm('解除後就不會再收到員工送出排班的通知。要解除嗎？')) return;
+
+    $('notifyUnlinkBtn').disabled = true;
+    const res = await Auth.post({ action: 'unlinkAdminNotify' });
+    $('notifyUnlinkBtn').disabled = false;
+
+    if (!res.ok) { setNotifyMsg('error', '⚠ ' + Auth.describeError(res.error)); return; }
+    renderNotify({ linked: false });
+    setNotifyMsg('ok', '已解除。');
   };
 
   /* ---------------- init ---------------- */

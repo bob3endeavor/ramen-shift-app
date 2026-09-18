@@ -89,8 +89,11 @@ ramen-shift-app/
 | POST | `linkAccount` | 未綁定者 | 首次登入把 `(姓名, Email)` 寫入 C 欄 |
 | POST | `submitShift` | 員工本人 | 寫入班表；姓名由 ID Token 反查，不看前端傳的值 |
 | POST | `unlinkLine` | 員工本人 | 解除自己的 LINE 連結 |
+| POST | `notifySubmit` | 員工本人 | 送出班表時通知店主（沒有變更就不送）|
 | POST | `setReminderConfig` | 僅管理員 | 改提醒的開關／星期／時段，並重建時間驅動觸發器 |
 | POST | `sendReminderTest` | 僅管理員 | 立刻送一則提醒（`dryRun:true` 則只回傳本文不送出） |
+| POST | `testAdminNotify` | 僅管理員 | 送一則測試通知到店主的個人 LINE |
+| POST | `unlinkAdminNotify` | 僅管理員 | 解除提交通知的收件帳號 |
 
 另外有兩條不走上面這套驗證的路徑（對方都沒有 Google 帳號也不知道
 `API_TOKEN`）：
@@ -117,6 +120,20 @@ ramen-shift-app/
   - 備援：在群組裡打「綁定 你的姓名」也可以（LINE Login 沒設定時用）。
 - LINE 頻道、Webhook、群組登記的完整步驟見
   [`docs/LINE-REMINDER.md`](docs/LINE-REMINDER.md)。
+
+## 提交通知
+
+員工按下**「送出班表」**時，用官方帳號通知店主的個人 LINE
+（`📝 林欣霈 送出了希望排班（9/22〜9/28）。這次改了 3 天，請確認。`）。
+
+- 班表是「確認設定」一天一天寫進去的，所以**寫入時只計數、不發訊息**，
+  按下「送出班表」才把累積的天數合成一則送出。沒有變更就不送，
+  所以連按兩次也不會重複。
+- 收件帳號在**管理頁的「05 提交通知」**按「連結我的 LINE」設定
+  （走同一套 LINE Login，但存在 Script Properties，跟班表姓名無關）。
+- ⚠ 店主必須先**把官方帳號加為好友**，否則訊息不會送達。
+  LINE 在這種情況仍然回 200，也沒有 API 可以查是不是好友，所以
+  設定完一定要按「發送測試通知」用實機確認。
 
 ## 本機開發
 

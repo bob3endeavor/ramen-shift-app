@@ -802,6 +802,16 @@
     loadMonthHours();
     stampToast.classList.add('show');
     setTimeout(function () { stampToast.classList.remove('show'); }, 1300);
+
+    // 店長への通知。1 日ずつの書き込みでは送らず、ここでまとめて 1 通にする。
+    // 変更が無ければ後端側で送らないので、二度押ししても重複しない。
+    // 通知はおまけなので、失敗しても従業員には何も見せない。
+    if (!isDemoMode) {
+      Auth.post({
+        action: 'notifySubmit',
+        dates: state.days.map(ymd).join(','),
+      }).catch(function () { /* 班表は既に保存済み。通知の失敗は伝えない */ });
+    }
   };
 
   /* ---------------- init ---------------- */

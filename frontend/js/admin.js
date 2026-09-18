@@ -489,6 +489,12 @@
     if (line.webhookUrl) {
       html += `<div class="setup-hint">Webhook URL：<code class="wrap">${line.webhookUrl}</code></div>`;
     }
+    // WEBAPP_URL の形が違うと空で返る。LINE Login が 400 になる原因なので明示する
+    html += line.callbackUrl
+      ? `<div class="setup-hint">LINE Login 的 callback URL：<code class="wrap">${line.callbackUrl}</code></div>`
+      : `<div class="setup-hint">⚠ Script Properties 的 <code>WEBAPP_URL</code> 是空的或格式不對，
+          LINE Login 會失敗。要填 <code>script.google.com/macros/s/…/exec</code>
+          （不是在瀏覽器打開後網址列上的 googleusercontent 網址）。</div>`;
     if (!done) {
       html += `<div class="setup-hint">設定步驟見 <code>docs/LINE-REMINDER.md</code>。前三項都「已設定」之後才能打開自動提醒。</div>`;
     } else {

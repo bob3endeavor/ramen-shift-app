@@ -50,6 +50,7 @@ const Auth = (function () {
     no_month_sheet_for_next_week: '下週所屬的月份分頁還沒建立，無法計算未提出名單。',
     line_login_not_configured: '後端還沒設定 LINE Login，請聯絡店長。',
     webapp_url_unknown: '後端不知道自己的網址，請店長在 Script Properties 補上 WEBAPP_URL。',
+    webapp_url_invalid: 'Script Properties 的 WEBAPP_URL 格式不對（要用 script.google.com/macros/s/…/exec，不是在瀏覽器打開後網址列上的 googleusercontent 網址）。',
     bad_weekday: '星期的設定值不正確。',
     bad_hour: '時段的設定值不正確。',
   };

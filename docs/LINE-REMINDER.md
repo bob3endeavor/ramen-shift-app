@@ -85,7 +85,7 @@ Apps Script の時間主導トリガー（毎週 金 12 時台）
    | `LINE_TARGET_ID` | `PASTE_AUTO` のまま触らない。4. で自動的に入る |
    | `LINE_LOGIN_CHANNEL_ID` / `_SECRET` | 5. で作る LINE Login チャネルの値 |
    | `LINE_LINK_STATE_SECRET` | 自動生成された値のまま（触らなくてよい） |
-   | `WEBAPP_URL` | **「デプロイを管理」に出ている `/exec` で終わる URL**（エディタからは自動取得できないので、基本的に手入力が必要） |
+   | `WEBAPP_URL` | **「デプロイを管理」に出ている `/exec` で終わる URL**（エディタからは自動取得できないので手入力。⚠ ブラウザで開いた後のアドレスバー＝`googleusercontent.com/macros/echo?…` は別物なので使わない） |
 
 4. **デプロイ > デプロイを管理 > 鉛筆アイコン > バージョン「新バージョン」>
    デプロイ**。保存だけでは `/exec` に反映されない。
@@ -291,3 +291,5 @@ LINE Login で連結し直すと、同じ姓名の古い行は自動で消えて
 | 「連結失敗（http_400）」 | チャネル ID／シークレットが LINE ログインチャネルのものになっていない |
 | 連結は完了したのに警告が出る | **LINE ログインチャネルが Messaging API と別プロバイダー**、または本人がまだ群組に入っていない |
 | 連結済みなのに @ されない | `LINE連携` 分頁の姓名が班表の姓名と 1 文字でも違う（前後の空白に注意） |
+| ボタンを押すと LINE が **400 Bad Request** | 認可 URL の `redirect_uri` か `client_id` が登録値と違う。アドレスバーの `redirect_uri=` を見て、`WEBAPP_URL` とコールバック URL の登録値の 3 つが完全一致しているか確かめる |
+| その `redirect_uri` が `googleusercontent.com` になっている | `WEBAPP_URL` に、`/exec` をブラウザで開いた**後**のアドレスバー（実行結果の一時 URL）を貼っている。`script.google.com/macros/s/…/exec` に直す |

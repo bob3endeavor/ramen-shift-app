@@ -1330,6 +1330,14 @@ const LINE_VERIFY_URL = 'https://api.line.me/oauth2/v2.1/verify';
 
 const LINE_STATE_TTL_MS = 10 * 60 * 1000;   // 10 分で失効
 
+/**
+ * ウェブアプリの公開 URL（/exec）の形。Google Workspace 独自ドメインの
+ * /a/macros/{ドメイン}/s/{デプロイID}/exec 形式も許す。
+ * これ以外（/dev、googleusercontent.com の一時 URL など）は受け付けない。
+ */
+const EXEC_URL_RE =
+  /^https:\/\/script\.google\.com\/(?:macros\/s\/[\w-]+|a\/macros\/[^\/]+\/s\/[\w-]+)\/exec$/;
+
 function lineLoginId_() { return (props_().getProperty('LINE_LOGIN_CHANNEL_ID') || '').trim(); }
 function lineLoginSecret_() { return (props_().getProperty('LINE_LOGIN_CHANNEL_SECRET') || '').trim(); }
 function lineStateSecret_() { return (props_().getProperty('LINE_LINK_STATE_SECRET') || '').trim(); }
@@ -1346,7 +1354,10 @@ function lineLoginReady_() {
  */
 function webAppUrl_() {
   const fixed = (props_().getProperty('WEBAPP_URL') || '').trim();
-  if (isSet_(fixed)) return fixed;
+  // 形が違うものは使わない。よくある取り違えは、/exec をブラウザで開いた後の
+  // アドレスバー（script.googleusercontent.com/macros/echo?user_content_key=…）。
+  // あれは実行結果の一時 URL で、コールバック先にはできない。
+  if (isSet_(fixed)) return EXEC_URL_RE.test(fixed) ? fixed : '';
 
   let url = '';
   try {
@@ -1362,7 +1373,7 @@ function webAppUrl_() {
   // /dev と /exec は ID の種類自体が違う（スクリプト ID と デプロイ ID）ので
   // 文字列を置き換えて変換することもできない。素直に「不明」として扱い、
   // WEBAPP_URL に /exec を入れてもらう。
-  return /\/exec$/.test(url) ? url : '';
+  return EXEC_URL_RE.test(url) ? url : '';
 }
 
 /* ------------------------------------------------------------
@@ -1412,7 +1423,11 @@ function handleStartLineLink_(who) {
   if (!lineLoginReady_()) return jsonOut_({ ok: false, error: 'line_login_not_configured' });
 
   const redirectUri = webAppUrl_();
-  if (!redirectUri) return jsonOut_({ ok: false, error: 'webapp_url_unknown' });
+  if (!redirectUri) {
+    // 入っているのに弾かれた＝形が違う。原因が分かる別のエラーにする。
+    const raw = (props_().getProperty('WEBAPP_URL') || '').trim();
+    return jsonOut_({ ok: false, error: isSet_(raw) ? 'webapp_url_invalid' : 'webapp_url_unknown' });
+  }
 
   const nonce = Utilities.getUuid().replace(/-/g, '');
   const state = signState_({

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Ming Ramen Bar｜排班（LIFF 連線檢查）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  /* この画面は Phase 0 の設定確認専用。Phase 2 で本物の排班フォームに置き換える。 */
+  .chk-list{ display:flex; flex-direction:column; gap:6px; }
+  .chk{
+    display:flex; align-items:flex-start; gap:10px;
+    background:var(--paper-2); border:1.4px solid var(--line-paper);
+    border-radius:8px; padding:9px 11px; font-size:12px;
+  }
+  .chk .mark{ flex:0 0 18px; font-size:14px; line-height:1.4; }
+  .chk .body{ flex:1; min-width:0; }
+  .chk .label{ font-weight:700; }
+  .chk .detail{
+    display:block; margin-top:2px; font-size:10.5px; line-height:1.6;
+    color:var(--ink-soft); word-break:break-all;
+    font-family:'DotGothic16', monospace;
+  }
+  .chk.ok{ border-color:var(--negi); }
+  .chk.ng{ border-color:var(--chili); border-style:dashed; }
+  .chk.ok .mark{ color:var(--negi); }
+  .chk.ng .mark{ color:var(--chili); }
+  .chk.wait .mark{ color:var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="noren">
+    <p class="eyebrow">MING RAMEN BAR ・ SETUP</p>
+    <h1>LIFF 連線檢查</h1>
+    <p>這是設定用的暫時畫面</p>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><span class="num">00</span><h2>檢查結果</h2></div>
+    <div class="chk-list" id="checks"></div>
+    <div class="note">
+      這頁只是確認 LIFF 設定有沒有接通，還不能填班表。
+      全部變成 ✓ 之後，這個網址會換成真正的排班畫面。
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+/**
+ * Phase 0（LIFF セットアップ）の疎通確認。
+ * LIFF ID・チャネルの公開状態・友だち追加の有無まで、実機で一度に確かめる。
+ * Phase 2 でこのファイルは本物の排班フォームに置き換わる。
+ */
+(async function () {
+  const box = document.getElementById('checks');
+
+  function row(label) {
+    const el = document.createElement('div');
+    el.className = 'chk wait';
+    el.innerHTML = '<span class="mark">…</span><span class="body">' +
+      '<span class="label"></span><span class="detail"></span></span>';
+    el.querySelector('.label').textContent = label;
+    box.appendChild(el);
+    return {
+      pass: function (detail) { set(el, 'ok', '✓', detail); },
+      fail: function (detail) { set(el, 'ng', '✗', detail); },
+      warn: function (detail) { set(el, 'ng', '!', detail); },
+    };
+  }
+  function set(el, cls, mark, detail) {
+    el.className = 'chk ' + cls;
+    el.querySelector('.mark').textContent = mark;
+    if (detail) el.querySelector('.detail').textContent = detail;
+  }
+
+  /** JWT の payload だけ取り出す（署名検証は後端の仕事） */
+  function decodeJwt(jwt) {
+    const raw = String(jwt).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(raw + '==='.slice(0, (4 - (raw.length % 4)) % 4));
+    const bytes = Uint8Array.from(bin, function (c) { return c.charCodeAt(0); });
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  const cSdk = row('LIFF SDK 載入');
+  const cId = row('LIFF ID 已填入 config.js');
+  const cInit = row('liff.init() 成功');
+  const cWhere = row('在 LINE App 裡開啟');
+  const cLogin = row('已登入 LINE');
+  const cToken = row('取得 ID Token');
+  const cAud = row('ID Token 的頻道（aud）');
+  const cFriend = row('已加官方帳號為好友');
+
+  if (!window.liff) { cSdk.fail('SDK 沒有載入，請檢查網路或擋廣告的外掛'); return; }
+  cSdk.pass('v' + (liff.getVersion ? liff.getVersion() : '?'));
+
+  if (typeof isLiffConfigured === 'undefined' || !isLiffConfigured) {
+    cId.fail('config.js 的 LIFF_ID 還是 PASTE_… 的預設值');
+    return;
+  }
+  cId.pass(CONFIG.LIFF_ID);
+
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+  } catch (err) {
+    cInit.fail(String((err && err.message) || err));
+    return;
+  }
+  cInit.pass();
+
+  const inClient = liff.isInClient();
+  if (inClient) cWhere.pass('LINE App 內建瀏覽器');
+  else cWhere.warn('一般瀏覽器（功能仍可用，但請用手機 LINE 測主要路徑）');
+
+  if (!liff.isLoggedIn()) {
+    cLogin.warn('尚未登入，正在導向 LINE 登入…');
+    liff.login({ redirectUri: location.href });
+    return;
+  }
+  cLogin.pass();
+
+  let idToken = null;
+  try { idToken = liff.getIDToken(); } catch (err) { /* 下で処理 */ }
+  if (!idToken) {
+    cToken.fail('拿不到 ID Token。請確認 LIFF 的 Scope 有勾 openid，然後重開這一頁');
+    return;
+  }
+  cToken.pass(idToken.length + ' 字元');
+
+  try {
+    const claims = decodeJwt(idToken);
+    const expired = Number(claims.exp) * 1000 < Date.now();
+    const detail = 'aud=' + claims.aud +
+      ' / sub=' + String(claims.sub || '').slice(0, 10) + '…' +
+      ' / ' + (expired ? '已過期' : '有效');
+    if (expired) cAud.warn(detail + '（重開這一頁就會換新的）');
+    else cAud.pass(detail);
+  } catch (err) {
+    cAud.fail('無法解析 ID Token：' + String((err && err.message) || err));
+  }
+
+  // 好友狀態。push（個別提醒）能不能送到，完全看這一項。
+  // 頻道沒有連結官方帳號的話，這個 API 會直接失敗。
+  try {
+    const fs = await liff.getFriendship();
+    if (fs && fs.friendFlag) cFriend.pass('可以收到個人通知');
+    else cFriend.warn('尚未加好友 → 個人提醒不會送達（LINE 不會報錯，只是收不到）');
+  } catch (err) {
+    cFriend.fail('查不到好友狀態：' + String((err && err.message) || err) +
+      '（多半是 LINE 登入頻道還沒連結官方帳號）');
+  }
+})();
+</script>
+
+</body>
+</html>

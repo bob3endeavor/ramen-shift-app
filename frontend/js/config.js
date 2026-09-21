@@ -16,6 +16,11 @@ const CONFIG = {
   // Google Cloud Console > API 和服務 > 憑證 > OAuth 用戶端 ID（網頁應用程式）
   // Authorized JavaScript origins 需要包含 GitHub Pages 網址與本機開發網址。
   GOOGLE_CLIENT_ID: '210207629281-288kjvq3qes9651a3udsnojnicqc00f7.apps.googleusercontent.com',
+
+  // LINE Developers > **LINE 登入頻道** > LIFF 分頁 > 新增的 LIFF App 的 LIFF ID
+  // （形如 2006xxxxxx-AbCdEfGh）。必須掛在 LINE 登入頻道底下，因為後端驗證
+  // id_token 時是拿 LINE_LOGIN_CHANNEL_ID 去對 aud。
+  LIFF_ID: 'PASTE_YOUR_LIFF_ID_HERE',
 };
 
 const isConfigured = !!CONFIG.API_URL && !CONFIG.API_URL.includes('PASTE_');
@@ -23,3 +28,6 @@ const isAuthConfigured = !!CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.i
 
 /** 示範模式：後端或登入尚未設定時，跳過驗證用假資料跑流程 */
 const isDemoMode = !isConfigured || !isAuthConfigured;
+
+/** LIFF 是否已設定（liff-shift.html 用） */
+const isLiffConfigured = !!CONFIG.LIFF_ID && !CONFIG.LIFF_ID.includes('PASTE_');

@@ -495,7 +495,11 @@ function verifyIdToken_(idToken) {
  * 驗證 token 並反查身分。
  * { ok:true, email, role:'admin'|'employee'|'unregistered', name, roleTitle, row }
  */
-function resolveIdentity_(idToken) {
+function resolveIdentity_(idToken, authKind) {
+  // 員工は LIFF（LINE）、管理員は Google。入口が 2 つになっただけで、
+  // ここを抜けたあとは「姓名」に収束するので下流の handler は共通。
+  if (authKind === 'line') return resolveLineIdentity_(idToken);
+
   const v = verifyIdToken_(idToken);
   if (!v.ok) return { ok: false, error: v.error };
 
@@ -1580,11 +1584,16 @@ function lineExchangeCode_(code) {
  * こちら側で JWT を自前検証する必要がない。
  */
 function lineVerifyIdToken_(idToken, nonce) {
+  // nonce は LINE Login（こちらが nonce を仕込んだ場合）だけ照合する。
+  // LIFF の id_token には自分で仕込んだ nonce が無いので、渡さない。
+  const payload = { id_token: idToken, client_id: lineLoginId_() };
+  if (nonce) payload.nonce = nonce;
+
   let res;
   try {
     res = UrlFetchApp.fetch(LINE_VERIFY_URL, {
       method: 'post',
-      payload: { id_token: idToken, client_id: lineLoginId_(), nonce: nonce },
+      payload: payload,
       muteHttpExceptions: true,
     });
   } catch (err) {
@@ -1700,6 +1709,143 @@ function lineLinkPage_(ok, title, message, warn) {
 }
 
 /* ============================================================
+ * LINE での身分驗證（LIFF から来る id_token）
+ * ------------------------------------------------------------
+ * Google アカウントを持たない従業員がいるため、員工側の入口を
+ * 「LINE のリッチメニュー → LIFF」に移す。LIFF の中では
+ * liff.getIDToken() が LINE の ID Token を返すので、それを
+ * そのまま API に載せてもらい、ここで検証する。
+ *
+ * Google 経路との違いは「何で人を特定するか」だけ：
+ *   Google … 檢證済み Email → 試算表 C 欄
+ *   LINE  … 檢證済み userId → 「LINE連携」分頁
+ * 特定できたあとは同じ「姓名」に収束するので、班表の読み書きから
+ * 先のロジックは一切変わらない。
+ *
+ * ⚠ LIFF の id_token の aud は **LINE ログインチャネルのチャネル ID**。
+ * つまり LIFF は LINE_LOGIN_CHANNEL_ID と同じチャネルの配下に
+ * 作られている必要がある（Messaging API チャネル側に作ると合わない）。
+ * ========================================================== */
+
+/**
+ * LINE の id_token を検証して userId を返す。
+ *
+ * 1 回のページ表示で whoami / getWeek / getMonthHours と複数回叩かれるので、
+ * Google 側と同じように短時間キャッシュして LINE への問い合わせを減らす。
+ */
+function verifyLineIdToken_(idToken) {
+  if (!idToken) return { ok: false, error: 'missing_id_token' };
+  if (!isSet_(lineLoginId_())) return { ok: false, error: 'line_login_not_configured' };
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'ltok_' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)
+  );
+  const cached = cache.get(cacheKey);
+  if (cached) return { ok: true, userId: cached };
+
+  const claims = lineVerifyIdToken_(idToken);   // nonce なしで検証
+  if (!claims.ok) {
+    // LINE の verify は期限切れも 400 で返す。前端が再取得すべきケースなので
+    // Google 側と同じ語彙（token_expired / invalid_token）に寄せておく。
+    return { ok: false, error: claims.error === 'http_400' ? 'invalid_token' : 'token_verify_failed' };
+  }
+
+  cache.put(cacheKey, claims.userId, 300);
+  return { ok: true, userId: claims.userId, displayName: claims.displayName };
+}
+
+/** userId → 姓名（「LINE連携」分頁の逆引き）。見つからなければ空文字 */
+function lineNameByUserId_(userId) {
+  if (!userId) return '';
+  const hit = readLineLinks_().find(function (l) { return l.userId === userId; });
+  return hit ? hit.name : '';
+}
+
+/**
+ * LINE 経路の身分解決。返り値の形は resolveIdentity_ と揃えてあるので、
+ * 呼び出し側（各 handler）は Google 経路との違いを意識しなくてよい。
+ *
+ * 管理員にはならない：ADMIN_EMAILS は Email 基準の判定で、LINE には
+ * Email が無いため。管理頁は従来どおり Google ログイン専用。
+ */
+function resolveLineIdentity_(idToken) {
+  const v = verifyLineIdToken_(idToken);
+  if (!v.ok) return { ok: false, error: v.error };
+
+  const sheet = rosterSheet_();
+  if (!sheet) return { ok: false, error: 'roster_sheet_not_found' };
+
+  const roster = getRoster_(sheet);
+  const name = lineNameByUserId_(v.userId);
+  const me = name ? roster.find(function (p) { return p.name === name; }) : null;
+
+  if (me) {
+    return {
+      ok: true,
+      auth: 'line',
+      lineUserId: v.userId,
+      email: '',
+      isAdmin: false,
+      role: 'employee',
+      name: me.name,
+      roleTitle: me.role,
+      row: me.row,
+    };
+  }
+
+  // 対照表に居ない（＝この LINE アカウントは初めて）。
+  // 選択肢は「まだ LINE と紐付いていない姓名」。Email の有無は見ない
+  // ので、Google で使っている人が後から LINE を足すこともできる。
+  const linked = lineUserIdMap_();
+  return {
+    ok: true,
+    auth: 'line',
+    lineUserId: v.userId,
+    lineDisplayName: v.displayName || '',
+    email: '',
+    isAdmin: false,
+    role: 'unregistered',
+    name: '',
+    unboundRoster: roster
+      .filter(function (p) { return !linked[p.name]; })
+      .map(function (p) { return { name: p.name, role: p.role }; }),
+  };
+}
+
+/**
+ * LINE 経路の初回綁定：選ばれた姓名とこの userId を対照表に書く。
+ * Google 経路が C 欄に Email を書くのと同じ役目。
+ */
+function linkLineAccount_(who, body) {
+  const name = String(body.name || '').trim();
+  if (!name) return jsonOut_({ ok: false, error: 'missing name' });
+
+  const sheet = rosterSheet_();
+  if (!sheet) return jsonOut_({ ok: false, error: 'roster_sheet_not_found' });
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return jsonOut_({ ok: false, error: 'busy_try_again' });
+  try {
+    const target = getRoster_(sheet).find(function (p) { return p.name === name; });
+    if (!target) return jsonOut_({ ok: false, error: 'staff_not_found' });
+
+    // 先に押さえた人が居たら奪わせない（Google 経路の name_already_linked と同じ）
+    const links = readLineLinks_();
+    if (links.some(function (l) { return l.name === name && l.userId !== who.lineUserId; })) {
+      return jsonOut_({ ok: false, error: 'name_already_linked' });
+    }
+
+    const saved = linkLineUser_(name, who.lineUserId, who.lineDisplayName || '');
+    if (!saved.ok) return jsonOut_({ ok: false, error: saved.error });
+
+    return jsonOut_({ ok: true, name: name, roleTitle: target.role });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ============================================================
  * doGet
  * ========================================================== */
 
@@ -1733,7 +1879,8 @@ function doGet(e) {
       return jsonOut_({ ok: false, error: 'unauthorized' });
     }
 
-    const who = resolveIdentity_(p.id_token);
+    // auth=line なら LIFF から来た LINE の id_token として検証する
+    const who = resolveIdentity_(p.id_token, p.auth);
     if (!who.ok) return jsonOut_({ ok: false, error: who.error });
 
     if (action === 'whoami') return handleWhoami_(who);
@@ -1757,11 +1904,13 @@ function handleWhoami_(who) {
     email: who.email,
     name: who.name || '',
   };
+  out.auth = who.auth || 'google';
   if (who.role === 'employee') {
     out.roleTitle = who.roleTitle || '';
-    // LINE 連携の導線を出すかどうかを員工頁が判断できるようにする
-    out.lineLoginReady = lineLoginReady_();
-    out.lineLinked = !!lineUserIdMap_()[who.name];
+    // LINE 連携の導線を出すかどうかを員工頁が判断できるようにする。
+    // LIFF から来ている場合は当然すでに紐付いているので、導線は出さない。
+    out.lineLoginReady = who.auth === 'line' ? false : lineLoginReady_();
+    out.lineLinked = who.auth === 'line' ? true : !!lineUserIdMap_()[who.name];
   }
   if (who.role === 'unregistered') out.unboundRoster = who.unboundRoster || [];
   return jsonOut_(out);
@@ -2190,7 +2339,7 @@ function doPost(e) {
       return jsonOut_({ ok: false, error: 'unauthorized' });
     }
 
-    const who = resolveIdentity_(body.id_token);
+    const who = resolveIdentity_(body.id_token, body.auth);
     if (!who.ok) return jsonOut_({ ok: false, error: who.error });
 
     const action = body.action || 'submitShift';
@@ -2215,6 +2364,9 @@ function handleLinkAccount_(who, body) {
   if (who.role === 'employee') {
     return jsonOut_({ ok: false, error: 'already_linked', name: who.name });
   }
+
+  // LINE（LIFF）経由は Email が無いので、C 欄ではなく対照表に書く
+  if (who.auth === 'line') return linkLineAccount_(who, body);
 
   const name = String(body.name || '').trim();
   if (!name) return jsonOut_({ ok: false, error: 'missing name' });

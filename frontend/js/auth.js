@@ -60,6 +60,9 @@ const Auth = (function () {
     idToken: null,
     profile: null,     // { role, email, name, roleTitle, unboundRoster }
     onAuthLost: null,  // 憑證失效時呼叫
+    // 'google'（既定・管理頁）か 'line'（LIFF の員工頁）。
+    // 後端はこの値で「どちらの id_token として検証するか」を決める。
+    authKind: 'google',
   };
 
   /* ---------- ID Token 的暫存 ----------
@@ -207,6 +210,7 @@ const Auth = (function () {
       action: action,
       token: CONFIG.API_TOKEN,
       id_token: state.idToken || '',
+      auth: state.authKind,
     }, params || {}));
     const url = CONFIG.API_URL + '?' + qs.toString();
 
@@ -241,6 +245,7 @@ const Auth = (function () {
         body: JSON.stringify(Object.assign({
           token: CONFIG.API_TOKEN,
           id_token: state.idToken || '',
+          auth: state.authKind,
         }, payload)),
       });
       json = await res.json();
@@ -258,11 +263,24 @@ const Auth = (function () {
     return res;
   }
 
+  /**
+   * LIFF（員工頁）用：Google ログインの代わりに LINE の id_token を使う。
+   * GSI も sessionStorage も経由しない —— トークンの持ち主は LIFF SDK で、
+   * 期限切れたら liff.login() でやり直すのが正しい復帰方法だから。
+   */
+  function useLineToken(idToken) {
+    state.authKind = 'line';
+    state.idToken = idToken;
+    clearStoredToken();
+  }
+
   return {
     get state() { return state; },
     get idToken() { return state.idToken; },
     get profile() { return state.profile; },
+    get authKind() { return state.authKind; },
     set onAuthLost(fn) { state.onAuthLost = fn; },
+    useLineToken: useLineToken,
     signIn: signIn,
     signOut: signOut,
     whoami: whoami,

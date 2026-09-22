@@ -36,6 +36,7 @@ Google 試算表；同時會提示「你選的時段跟誰重疊」，並顯示�
 ramen-shift-app/
 ├── frontend/              前端（純 HTML/CSS/JS，無建置流程）
 │   ├── index.html         員工頁（登入 / 首次綁定 / 排班 / 工時 / LINE 連結）
+│   ├── liff-shift.html    LIFF 員工頁（目前是設定用的連線檢查畫面）
 │   ├── admin.html         管理員頁（全員班表唯讀總覽）
 │   ├── css/style.css
 │   └── js/
@@ -51,6 +52,7 @@ ramen-shift-app/
 └── docs/
     ├── DEPLOY.md                      部署、OAuth 設定、clasp 開發環境
     ├── LINE-REMINDER.md               LINE 催繳提醒的設定步驟
+    ├── REQUIREMENTS-line-first-flow.md  LIFF 化（員工入口改走 LINE）的規格
     └── REQUIREMENTS-auth-payroll.md   登入／權限／工時的需求規格
 ```
 
@@ -74,8 +76,10 @@ ramen-shift-app/
 
 ## API 一覽（`apps-script/Code.gs`）
 
-所有 `action` 都需要帶 `token`（共享密鑰）與 `id_token`（Google ID Token），
-`ping` 除外。
+所有 `action` 都需要帶 `token`（共享密鑰）與 `id_token`，`ping` 除外。
+`id_token` 預設當成 Google ID Token 驗證；帶 `auth=line` 時則當成 LINE 的
+ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁反查姓名。
+管理員權限只看 `ADMIN_EMAILS`，所以走 LINE 進來的人不會是管理員。
 
 | 方法 | action | 誰可以用 | 回傳 |
 | --- | --- | --- | --- |

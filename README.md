@@ -36,7 +36,7 @@ Google 試算表；同時會提示「你選的時段跟誰重疊」，並顯示�
 ramen-shift-app/
 ├── frontend/              前端（純 HTML/CSS/JS，無建置流程）
 │   ├── index.html         員工頁（登入 / 首次綁定 / 排班 / 工時 / LINE 連結）
-│   ├── liff-shift.html    LIFF 員工頁（目前是設定用的連線檢查畫面）
+│   ├── liff-shift.html    LIFF 員工頁（從 LINE 開啟，免登入）
 │   ├── admin.html         管理員頁（全員班表唯讀總覽）
 │   ├── css/style.css
 │   └── js/
@@ -83,7 +83,7 @@ ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁�
 
 | 方法 | action | 誰可以用 | 回傳 |
 | --- | --- | --- | --- |
-| GET | `ping` | 任何人 | 健康檢查 |
+| GET | `ping` | 任何人 | 健康檢查。回傳 `version`，可用來確認貼上的 Code.gs 真的部署了 |
 | GET | `whoami` | 登入者 | `{role:'admin'\|'employee'\|'unregistered', name, email, unboundRoster}` |
 | GET | `getWeek` | 員工／管理員 | 員工：自己那一列 + 與自己重疊的同事（姓名＋時段）<br>管理員：全員完整班表 |
 | GET | `getMonthHours` | 員工本人 | 本月至今累計時數（排休不計），可選帶 `nextWeekDates` 一併算小計 |
@@ -166,6 +166,10 @@ npm run dev        # npx serve frontend -l 4173
 バージョンに固定されているため、「デプロイ」→「デプロイを管理」→ 鉛筆アイコン
 → バージョン「新バージョン」→「デプロイ」まで行う必要があります。URL は
 変わりません。関数の実行は不要です。
+
+貼り直しが本当に反映されたかは、`/exec?action=ping` が返す `version`
+（`Code.gs` の `CODE_VERSION`）で確認できます。`Code.gs` を更新するときは
+この定数も一緒に上げてください。
 
 | 変更したもの | Apps Script への貼り直し |
 | --- | --- |

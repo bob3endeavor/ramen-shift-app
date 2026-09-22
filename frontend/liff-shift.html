@@ -3,160 +3,165 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Ming Ramen Bar｜排班（LIFF 連線檢查）</title>
+<title>Ming Ramen Bar｜排班意願申請</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<style>
-  /* この画面は Phase 0 の設定確認専用。Phase 2 で本物の排班フォームに置き換える。 */
-  .chk-list{ display:flex; flex-direction:column; gap:6px; }
-  .chk{
-    display:flex; align-items:flex-start; gap:10px;
-    background:var(--paper-2); border:1.4px solid var(--line-paper);
-    border-radius:8px; padding:9px 11px; font-size:12px;
+<script>
+/* LINE から開いた版だと app.js に伝える。Google 用のゲート画面を持たない
+   代わりに、LIFF SDK から取った id_token でそのまま身分を確かめる。 */
+window.APP_AUTH_MODE = 'liff';
+</script>
+<script>
+/* 例外で画面が真っ白のまま終わらないよう、エラーを画面上に出す。
+   LINE アプリ内では開発者ツールが見られないので、これが唯一の手掛かりになる。 */
+(function () {
+  function show(msg) {
+    var el = document.getElementById('fatalError');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'fatalError';
+      el.className = 'fatal-error';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = '⚠ 錯誤：' + msg;
+    el.style.display = 'block';
   }
-  .chk .mark{ flex:0 0 18px; font-size:14px; line-height:1.4; }
-  .chk .body{ flex:1; min-width:0; }
-  .chk .label{ font-weight:700; }
-  .chk .detail{
-    display:block; margin-top:2px; font-size:10.5px; line-height:1.6;
-    color:var(--ink-soft); word-break:break-all;
-    font-family:'DotGothic16', monospace;
-  }
-  .chk.ok{ border-color:var(--negi); }
-  .chk.ng{ border-color:var(--chili); border-style:dashed; }
-  .chk.ok .mark{ color:var(--negi); }
-  .chk.ng .mark{ color:var(--chili); }
-  .chk.wait .mark{ color:var(--ink-soft); }
-</style>
+  window.addEventListener('error', function (e) {
+    var f = String(e.filename || '').split('/').pop();
+    show((e.message || 'unknown') + (f ? '  @' + f + ':' + (e.lineno || '?') : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    show('Promise: ' + ((r && (r.message || r)) || 'unknown'));
+  });
+})();
+</script>
 </head>
 <body>
 
 <div class="phone">
   <div class="noren">
-    <p class="eyebrow">MING RAMEN BAR ・ SETUP</p>
-    <h1>LIFF 連線檢查</h1>
-    <p>這是設定用的暫時畫面</p>
+    <span class="demo-badge" id="demoBadge" style="display:none;">DEMO</span>
+    <p class="eyebrow">MING RAMEN BAR ・ 員工專用</p>
+    <h1>排班意願申請</h1>
+    <p>點選送出，直接反映到班表</p>
   </div>
 
-  <div class="section">
-    <div class="section-title"><span class="num">00</span><h2>檢查結果</h2></div>
-    <div class="chk-list" id="checks"></div>
-    <div class="note">
-      這頁只是確認 LIFF 設定有沒有接通，還不能填班表。
-      全部變成 ✓ 之後，這個網址會換成真正的排班畫面。
+  <div id="syncBanner" class="sync-banner"></div>
+
+  <!-- ============ 首次使用：還沒對應到姓名 ============
+       LINE 側ではもう本人が確定しているので、ここで選ぶのは一度きり。
+       Google 版と違って Email は無いので、その表示は出さない。 -->
+  <div class="gate" id="bindGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">FIRST TIME</p>
+      <h2>請選擇你的姓名</h2>
+      <p class="gate-text">
+        這是你第一次用 LINE 打開這個畫面。請從名單中選擇你的姓名，
+        送出後你的 LINE 帳號就會<b>永久對應</b>到這位員工，之後直接進入班表。
+      </p>
+      <div class="select-wrap">
+        <select id="bindSelect">
+          <option value="" disabled selected>請選擇姓名</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="bindBtn" disabled>確認綁定</button>
+      <p class="gate-error" id="bindError"></p>
+    </div>
+  </div>
+
+  <!-- ============ 主畫面 ============ -->
+  <div id="appMain" style="display:none;">
+
+    <!-- 身分（LINE 帳號から後端が反查したもの。変更不可） -->
+    <div class="section">
+      <div class="section-title"><span class="num">00</span><h2>你的身分</h2></div>
+      <div class="me-card">
+        <div class="me-main">
+          <span class="me-name" id="meName">—</span>
+          <span class="role-chip" id="roleChip" style="display:none;"></span>
+        </div>
+        <span class="me-email" id="meEmail"></span>
+      </div>
+    </div>
+
+    <!-- STEP 1: next week Mon-Sun picker -->
+    <div class="section">
+      <div class="section-title"><span class="num">01</span><h2>點選希望上班的日期</h2></div>
+      <p class="week-note" id="weekNote"></p>
+      <div class="day-strip" id="dayStrip"></div>
+    </div>
+
+    <!-- STEP 2: preview（只顯示自己 + 與自己重疊的同事） -->
+    <div class="section">
+      <div class="section-title"><span class="num">02</span><h2>班表反映預覽</h2><span class="sub">只顯示與你重疊的人</span></div>
+      <div class="preview-wrap"><table class="matrix" id="matrixTable"></table></div>
+      <div class="overlap-summary" id="overlapSummary"></div>
+    </div>
+
+    <!-- STEP 3: 工時試算 -->
+    <div class="section" style="margin-bottom:20px;">
+      <div class="section-title"><span class="num">03</span><h2>工時試算</h2><span class="sub" id="hoursMonthLabel"></span></div>
+      <div class="hours-grid">
+        <div class="hours-card primary">
+          <span class="h-label">本月累計已上</span>
+          <span class="h-value"><b id="monthHours">—</b><span class="h-unit">小時</span></span>
+          <span class="h-sub" id="monthHoursSub">讀取中…</span>
+        </div>
+        <div class="hours-card">
+          <span class="h-label">下週希望排班</span>
+          <span class="h-value"><b id="weekHours">0</b><span class="h-unit">小時</span></span>
+          <span class="h-sub" id="weekHoursSub">尚未選擇</span>
+        </div>
+      </div>
+      <div class="note">
+        時數依照試算表上「已寫入的班別」計算（排休不計）。本月累計只算到今天為止，
+        若店長還沒建立本月分頁，數字會顯示為 0。
+      </div>
     </div>
   </div>
 </div>
 
+<div class="submit-bar" id="submitBar" style="display:none;">
+  <div class="count">已選擇：<b id="pickedName">—</b>　共 <b id="pickedCount">0</b> 天</div>
+  <button class="btn-submit" id="submitBtn" disabled>送出班表</button>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="sheet" id="sheet">
+  <div class="grabber"></div>
+  <h3 id="sheetDate">8月31日（一）</h3>
+  <p class="sheet-sub">請選擇班別，或選擇排休</p>
+
+  <div class="preset-grid" id="presetGrid"></div>
+  <div class="divider-label">或自訂時間</div>
+  <div class="time-row">
+    <div class="time-field" id="startField">
+      <label>上班時間</label>
+      <select id="startSelect"></select>
+    </div>
+    <div class="time-field" id="endField">
+      <label>下班時間</label>
+      <select id="endSelect"></select>
+    </div>
+  </div>
+  <p class="range-hint" id="rangeHint"></p>
+
+  <button class="off-btn" id="offBtn">🛌　排休（本日不上班）</button>
+  <div class="sheet-actions">
+    <button class="btn-clear" id="clearBtn">刪除這天</button>
+    <button class="btn-ok" id="okBtn">確認設定</button>
+  </div>
+</div>
+
+<div class="stamp-toast" id="stampToast">已送出</div>
+
 <script src="js/config.js"></script>
-<script>
-/**
- * Phase 0（LIFF セットアップ）の疎通確認。
- * LIFF ID・チャネルの公開状態・友だち追加の有無まで、実機で一度に確かめる。
- * Phase 2 でこのファイルは本物の排班フォームに置き換わる。
- */
-(async function () {
-  const box = document.getElementById('checks');
-
-  function row(label) {
-    const el = document.createElement('div');
-    el.className = 'chk wait';
-    el.innerHTML = '<span class="mark">…</span><span class="body">' +
-      '<span class="label"></span><span class="detail"></span></span>';
-    el.querySelector('.label').textContent = label;
-    box.appendChild(el);
-    return {
-      pass: function (detail) { set(el, 'ok', '✓', detail); },
-      fail: function (detail) { set(el, 'ng', '✗', detail); },
-      warn: function (detail) { set(el, 'ng', '!', detail); },
-    };
-  }
-  function set(el, cls, mark, detail) {
-    el.className = 'chk ' + cls;
-    el.querySelector('.mark').textContent = mark;
-    if (detail) el.querySelector('.detail').textContent = detail;
-  }
-
-  /** JWT の payload だけ取り出す（署名検証は後端の仕事） */
-  function decodeJwt(jwt) {
-    const raw = String(jwt).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const bin = atob(raw + '==='.slice(0, (4 - (raw.length % 4)) % 4));
-    const bytes = Uint8Array.from(bin, function (c) { return c.charCodeAt(0); });
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-
-  const cSdk = row('LIFF SDK 載入');
-  const cId = row('LIFF ID 已填入 config.js');
-  const cInit = row('liff.init() 成功');
-  const cWhere = row('在 LINE App 裡開啟');
-  const cLogin = row('已登入 LINE');
-  const cToken = row('取得 ID Token');
-  const cAud = row('ID Token 的頻道（aud）');
-  const cFriend = row('已加官方帳號為好友');
-
-  if (!window.liff) { cSdk.fail('SDK 沒有載入，請檢查網路或擋廣告的外掛'); return; }
-  cSdk.pass('v' + (liff.getVersion ? liff.getVersion() : '?'));
-
-  if (typeof isLiffConfigured === 'undefined' || !isLiffConfigured) {
-    cId.fail('config.js 的 LIFF_ID 還是 PASTE_… 的預設值');
-    return;
-  }
-  cId.pass(CONFIG.LIFF_ID);
-
-  try {
-    await liff.init({ liffId: CONFIG.LIFF_ID });
-  } catch (err) {
-    cInit.fail(String((err && err.message) || err));
-    return;
-  }
-  cInit.pass();
-
-  const inClient = liff.isInClient();
-  if (inClient) cWhere.pass('LINE App 內建瀏覽器');
-  else cWhere.warn('一般瀏覽器（功能仍可用，但請用手機 LINE 測主要路徑）');
-
-  if (!liff.isLoggedIn()) {
-    cLogin.warn('尚未登入，正在導向 LINE 登入…');
-    liff.login({ redirectUri: location.href });
-    return;
-  }
-  cLogin.pass();
-
-  let idToken = null;
-  try { idToken = liff.getIDToken(); } catch (err) { /* 下で処理 */ }
-  if (!idToken) {
-    cToken.fail('拿不到 ID Token。請確認 LIFF 的 Scope 有勾 openid，然後重開這一頁');
-    return;
-  }
-  cToken.pass(idToken.length + ' 字元');
-
-  try {
-    const claims = decodeJwt(idToken);
-    const expired = Number(claims.exp) * 1000 < Date.now();
-    const detail = 'aud=' + claims.aud +
-      ' / sub=' + String(claims.sub || '').slice(0, 10) + '…' +
-      ' / ' + (expired ? '已過期' : '有效');
-    if (expired) cAud.warn(detail + '（重開這一頁就會換新的）');
-    else cAud.pass(detail);
-  } catch (err) {
-    cAud.fail('無法解析 ID Token：' + String((err && err.message) || err));
-  }
-
-  // 好友狀態。push（個別提醒）能不能送到，完全看這一項。
-  // 頻道沒有連結官方帳號的話，這個 API 會直接失敗。
-  try {
-    const fs = await liff.getFriendship();
-    if (fs && fs.friendFlag) cFriend.pass('可以收到個人通知');
-    else cFriend.warn('尚未加好友 → 個人提醒不會送達（LINE 不會報錯，只是收不到）');
-  } catch (err) {
-    cFriend.fail('查不到好友狀態：' + String((err && err.message) || err) +
-      '（多半是 LINE 登入頻道還沒連結官方帳號）');
-  }
-})();
-</script>
-
+<script src="js/demo-data.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

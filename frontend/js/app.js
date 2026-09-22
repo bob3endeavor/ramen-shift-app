@@ -93,11 +93,27 @@
   const submitBar = $('submitBar');
   const syncBanner = $('syncBanner');
 
+  /**
+   * 入口は 2 つある：
+   *   'google' … index.html（Google 登入）
+   *   'liff'   … liff-shift.html（LINE のリッチメニューから開く）
+   * 班表まわりのロジックは共通なので、違うのは「誰であるかの確かめ方」と
+   * 「どのゲート画面を持っているか」だけ。LIFF 版は Google 用のゲートを
+   * 持たないので、DOM を触るところは要素が無くても落ちないようにしてある。
+   */
+  const AUTH_MODE = (window.APP_AUTH_MODE === 'liff') ? 'liff' : 'google';
+
+  /** 要素が無いページでは何もしない onclick 登録 */
+  function onClick(id, fn) {
+    const el = $(id);
+    if (el) el.onclick = fn;
+  }
+
   function showOnly(el) {
     [authGate, bindGate, adminGate, chooseGate, appMain].forEach(function (node) {
-      node.style.display = node === el ? 'block' : 'none';
+      if (node) node.style.display = node === el ? 'block' : 'none';
     });
-    submitBar.style.display = el === appMain ? 'flex' : 'none';
+    if (submitBar) submitBar.style.display = el === appMain ? 'flex' : 'none';
   }
   function showBanner(kind, text) {
     syncBanner.className = `sync-banner show ${kind}`;
@@ -122,12 +138,15 @@
 
   async function boot() {
     if (isDemoMode) {
-      $('demoBadge').style.display = 'inline-block';
+      const badge = $('demoBadge');
+      if (badge) badge.style.display = 'inline-block';
       showBanner('warn', '⚠ 尚未設定後端／Google 登入，目前為示範模式');
       state.me = { name: DEMO_ME.name, role: DEMO_ME.role, email: DEMO_ME.email };
       await enterApp();
       return;
     }
+
+    if (AUTH_MODE === 'liff') return bootLiff();
 
     Auth.onAuthLost = function (code) {
       state.signingIn = false;
@@ -139,6 +158,51 @@
 
     showOnly(authGate);
     await startSignIn();
+  }
+
+  /**
+   * LIFF（LINE アプリ内）での起動。
+   * リッチメニューから開くと LINE 側で既にログイン済みなので、
+   * 利用者は何も押さない。id_token をそのまま API に載せるだけ。
+   */
+  async function bootLiff() {
+    if (!window.liff) {
+      showBanner('error', '⚠ LIFF 元件載入失敗，請關掉這個畫面重新從 LINE 進入。');
+      return;
+    }
+    if (typeof isLiffConfigured === 'undefined' || !isLiffConfigured) {
+      showBanner('error', '⚠ 尚未設定 LIFF ID，請聯絡店長。');
+      return;
+    }
+
+    showBanner('ok', '確認身分中…');
+    try {
+      await liff.init({ liffId: CONFIG.LIFF_ID });
+    } catch (err) {
+      showRetryBanner('⚠ LIFF 初始化失敗：' + ((err && err.message) || err), bootLiff);
+      return;
+    }
+
+    // 一般のブラウザで開かれた場合はここで LINE のログイン画面へ飛ぶ。
+    // LINE アプリ内なら isLoggedIn() は最初から true。
+    if (!liff.isLoggedIn()) {
+      liff.login({ redirectUri: location.href });
+      return;
+    }
+
+    const idToken = liff.getIDToken();
+    if (!idToken) {
+      showRetryBanner('⚠ 取不到 LINE 的登入憑證，請再試一次。', bootLiff);
+      return;
+    }
+    Auth.useLineToken(idToken);
+
+    // LINE の id_token が切れたら、やり直す先は GSI ではなく liff.login()
+    Auth.onAuthLost = function () {
+      try { liff.login({ redirectUri: location.href }); } catch (err) { location.reload(); }
+    };
+
+    await routeByProfile();
   }
 
   /**
@@ -184,6 +248,11 @@
     const who = await Auth.whoami();
     setAuthBusy(false);
     if (!who.ok) {
+      // LIFF 版には戻る先のログイン画面が無いので、バナーで再試行させる
+      if (AUTH_MODE === 'liff') {
+        showRetryBanner('⚠ ' + Auth.describeError(who.error), routeByProfile);
+        return;
+      }
       showOnly(authGate);
       $('authError').textContent = Auth.describeError(who.error);
       hideBanner();
@@ -200,7 +269,9 @@
     }
     if (who.role === 'unregistered') {
       hideBanner();
-      $('bindEmail').textContent = who.email;
+      // LIFF 経由は Email が無い（身分は LINE の userId）ので、その行は出さない
+      const bindEmail = $('bindEmail');
+      if (bindEmail) bindEmail.textContent = who.email || '';
       buildBindOptions(who.unboundRoster || []);
       showOnly(bindGate);
       return;
@@ -224,8 +295,8 @@
     await enterApp();
   }
 
-  $('chooseStaff').onclick = function () { enterApp(); };
-  $('chooseSignOut').onclick = function () { Auth.signOut(); location.reload(); };
+  onClick('chooseStaff', function () { enterApp(); });
+  onClick('chooseSignOut', function () { Auth.signOut(); location.reload(); });
 
   /* ---------------- 首次登入：綁定姓名 ---------------- */
 
@@ -275,9 +346,9 @@
     await enterApp();
   };
 
-  $('bindSignOut').onclick = function () { Auth.signOut(); location.reload(); };
-  $('adminSignOut').onclick = function () { Auth.signOut(); location.reload(); };
-  $('signOutBtn').onclick = function () { Auth.signOut(); location.reload(); };
+  onClick('bindSignOut', function () { Auth.signOut(); location.reload(); });
+  onClick('adminSignOut', function () { Auth.signOut(); location.reload(); });
+  onClick('signOutBtn', function () { Auth.signOut(); location.reload(); });
 
   /* ============================================================
    * 主畫面
@@ -295,7 +366,8 @@
       roleChip.style.display = 'none';
     }
 
-    $('adminLinkRow').style.display = state.isAdmin ? 'block' : 'none';
+    const adminLinkRow = $('adminLinkRow');
+    if (adminLinkRow) adminLinkRow.style.display = state.isAdmin ? 'block' : 'none';
     renderLineRow();
 
     $('weekNote').innerHTML =
@@ -321,6 +393,8 @@
 
   function renderLineRow() {
     const row = $('lineRow');
+    // LIFF 版はそもそも LINE で入っているので、この導線自体を置いていない
+    if (!row) return;
     if (!isDemoMode && !state.lineLoginReady) { row.style.display = 'none'; return; }
     row.style.display = 'block';
 
@@ -335,7 +409,7 @@
     $('lineError').textContent = '';
   }
 
-  $('lineLinkBtn').onclick = async function () {
+  onClick('lineLinkBtn', async function () {
     if (isDemoMode) {
       $('lineError').textContent = '示範模式無法連結 LINE。';
       return;
@@ -354,9 +428,9 @@
     }
     // LINE の同意画面へ。戻り先は後端（/exec）で、そこで結果ページが出る。
     location.href = res.url;
-  };
+  });
 
-  $('lineUnlinkBtn').onclick = async function () {
+  onClick('lineUnlinkBtn', async function () {
     if (isDemoMode) return;
     if (!confirm('解除連結後，提醒訊息就不會再 @ 你（但還是會列出你的姓名）。要解除嗎？')) return;
 
@@ -371,7 +445,7 @@
     }
     state.lineLinked = false;
     renderLineRow();
-  };
+  });
 
   /* ---------------- 讀取本週資料 ---------------- */
 

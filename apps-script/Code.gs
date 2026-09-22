@@ -40,6 +40,14 @@ const MAX_STAFF_ROWS = 200;  // 讀取員工名單時的保險上限
 const SHEET_NAME_RE = /排班班表\s*$/;
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
 
+/**
+ * この Code.gs の版。`?action=ping` が返すので、貼り直し＋デプロイが
+ * 実際に反映されたかを外から確かめられる（保存しただけでは /exec は
+ * 変わらないので、毎回これで確認できるようにしておく）。
+ * Code.gs を更新するときは、この値も一緒に上げること。
+ */
+const CODE_VERSION = '2026-09-22 liff-auth';
+
 /* ============================================================
  * Script Properties
  * ========================================================== */
@@ -1872,7 +1880,11 @@ function doGet(e) {
     if (p.state && (p.code || p.error)) return handleLineLinkCallback_(p);
 
     if (action === 'ping') {
-      return jsonOut_({ ok: true, message: 'Ming Ramen Bar Shift API is running' });
+      return jsonOut_({
+        ok: true,
+        message: 'Ming Ramen Bar Shift API is running',
+        version: CODE_VERSION,
+      });
     }
 
     if (!checkSharedToken_(p.token)) {

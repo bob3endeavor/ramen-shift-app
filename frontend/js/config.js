@@ -20,7 +20,7 @@ const CONFIG = {
   // LINE Developers > **LINE 登入頻道** > LIFF 分頁 > 新增的 LIFF App 的 LIFF ID
   // （形如 2006xxxxxx-AbCdEfGh）。必須掛在 LINE 登入頻道底下，因為後端驗證
   // id_token 時是拿 LINE_LOGIN_CHANNEL_ID 去對 aud。
-  LIFF_ID: 'PASTE_YOUR_LIFF_ID_HERE',
+  LIFF_ID: '2011630703-6S09aJvX',
 };
 
 const isConfigured = !!CONFIG.API_URL && !CONFIG.API_URL.includes('PASTE_');

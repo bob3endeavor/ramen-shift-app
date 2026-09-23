@@ -71,9 +71,9 @@
       <h2>沒有管理權限</h2>
       <p class="gate-text">
         <b id="denyEmail"></b> 不在管理員名單內。<br>
-        如果你是員工，請改用員工頁面填寫自己的希望排班。
+        如果你是員工，請改用 LINE 的選單填寫自己的希望排班。
       </p>
-      <a class="btn-primary" href="index.html">前往員工頁面</a>
+      <a class="btn-line" id="denyLiffBtn" href="#" style="display:none;">用 LINE 開啟班表</a>
       <button class="btn-link" id="denySignOut">改用其他 Google 帳號登入</button>
     </div>
   </div>
@@ -87,8 +87,8 @@
           <span class="admin-badge">ADMIN</span>
           <span class="me-email" id="meEmail"></span>
           <!-- 管理員兼員工のときだけ出る -->
-          <a class="switch-link" id="toStaffLink" href="index.html" style="display:none;">
-            ← 切換到員工畫面
+          <a class="switch-link" id="toStaffLink" href="#" style="display:none;">
+            ← 用 LINE 填自己的班表
           </a>
         </div>
         <button class="btn-link" id="signOutBtn">登出</button>

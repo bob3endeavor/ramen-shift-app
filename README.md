@@ -1,29 +1,32 @@
 # Ming Ramen Bar｜排班意願申請
 
-員工用 Google 帳號登入後，選擇希望上班的時間，資料即時寫入店長管理的
-Google 試算表；同時會提示「你選的時段跟誰重疊」，並顯示自己本月的累計工時。
-管理員（店主／排班管理者）有獨立的唯讀頁面可以看全員班表。
+員工從 **LINE 的選單**點開班表（LIFF），不用登入就會自動認出是誰，選好
+希望上班的時間，資料即時寫入店長管理的 Google 試算表；同時會提示
+「你選的時段跟誰重疊」，並顯示自己本月的累計工時。
+管理員（店主／排班管理者）用 Google 登入，有獨立的唯讀頁面看全員班表。
 
 ```
-員工 (手機瀏覽器)                    管理員 (電腦瀏覽器)
-  index.html                            admin.html
+員工 (LINE App)                      管理員 (電腦瀏覽器)
+  Rich Menu → liff-shift.html           index.html → admin.html
       │                                     │
-      │  Google 登入 → ID Token             │
+      │  LIFF → LINE ID Token               │  Google 登入 → ID Token
+      │  （不用登入，開啟即識別）             │
       └──────────────┬──────────────────────┘
-                     │  fetch (GET 讀取 / POST 寫入)，每次都帶 ID Token
+                     │  fetch，每次都帶 id_token（+ auth=line）
                      ▼
       Google Apps Script Web App  ──────►  Google 試算表
       （apps-script/Code.gs）              （2026-Ming Ramen Bar-員工排班表）
          │
-         └─ 用 tokeninfo 驗證簽章/有效期/aud，取出已驗證的 Email，
-            再用 Email 反查員工姓名 → 決定這個人能看什麼、能改什麼
+         ├─ auth=line → 向 LINE 驗證 id_token，用 userId 查「LINE連携」分頁
+         └─ 其他     → 用 tokeninfo 驗證，用 Email 查試算表 C 欄
+                        兩條路都收斂成「姓名」，之後的邏輯完全一樣
 ```
 
 ## 權限模型
 
 | 角色 | 判定方式 | 可以做什麼 |
 | --- | --- | --- |
-| 一般員工 | Email 出現在試算表 C 欄 | 只能查看／填寫**自己**的希望排班；只看得到**與自己時段重疊**的同事姓名與時段；可看自己本月累計工時 |
+| 一般員工 | LINE userId 在「LINE連携」分頁（或 Email 在試算表 C 欄） | 只能查看／填寫**自己**的希望排班；只看得到**與自己時段重疊**的同事姓名與時段；可看自己本月累計工時 |
 | 管理員 | Email 在 Script Properties 的 `ADMIN_EMAILS` 內 | `admin.html` 唯讀查看全員班表、全員帳號綁定狀態 |
 | 未綁定 | 登入成功但 Email 不在 C 欄也不是管理員 | 只能進入「首次登入」畫面，從尚未綁定的名單中選自己的姓名 |
 
@@ -35,15 +38,15 @@ Google 試算表；同時會提示「你選的時段跟誰重疊」，並顯示�
 ```
 ramen-shift-app/
 ├── frontend/              前端（純 HTML/CSS/JS，無建置流程）
-│   ├── index.html         員工頁（登入 / 首次綁定 / 排班 / 工時 / LINE 連結）
-│   ├── liff-shift.html    LIFF 員工頁（從 LINE 開啟，免登入）
+│   ├── index.html         入口（員工→LINE 的道標 / 管理員→Google 登入）
+│   ├── liff-shift.html    員工頁（從 LINE 的選單開啟，免登入）
 │   ├── admin.html         管理員頁（全員班表唯讀總覽）
 │   ├── css/style.css
 │   └── js/
 │       ├── config.js      連線設定（API_URL / API_TOKEN / GOOGLE_CLIENT_ID）
 │       ├── demo-data.js   離線示範用假資料
 │       ├── auth.js        Google 登入與 API 呼叫的共用模組
-│       ├── app.js         員工頁邏輯
+│       ├── app.js         員工頁邏輯（liff-shift.html 用）
 │       └── admin.js       管理員頁邏輯
 ├── apps-script/           後端（Google Apps Script，綁定試算表）
 │   ├── Code.gs
@@ -147,7 +150,9 @@ ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁�
 npm run dev        # npx serve frontend -l 4173
 ```
 
-開啟 http://localhost:4173/index.html 或 http://localhost:4173/admin.html。
+開啟 http://localhost:4173/index.html（入口）、`/admin.html`（管理頁）、
+或 `/liff-shift.html`（員工頁。在一般瀏覽器開會退化成 LINE 登入畫面，
+示範模式下則直接顯示假資料）。
 
 `frontend/js/config.js` 裡的 `API_URL` 或 `GOOGLE_CLIENT_ID` 若還是預設的
 `PASTE_...`，畫面會自動切換成**示範模式**：跳過 Google 登入，用
@@ -190,8 +195,9 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
 
 ## 資料流程摘要
 
-1. 頁面載入 → Google 登入取得 ID Token → `GET ?action=whoami` 決定要顯示
-   「首次綁定」「員工主畫面」還是「請改用管理頁」。
+1. 員工從 LINE 的選單開啟 → LIFF 自動取得 LINE ID Token →
+   `GET ?action=whoami&auth=line` 決定要顯示「首次選姓名」還是直接進班表。
+   （管理員走 `index.html` 的 Google 登入 → `admin.html`）
 2. 員工主畫面載入時呼叫 `GET ?action=getWeek&dates=...`，拿到自己下週
    七天的班表，以及「跟自己重疊的同事」清單（不會拿到其他人的完整班表）。
 3. 選日期、班別後按「確認設定」，`POST` 立刻寫入試算表對應儲存格
@@ -209,9 +215,11 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
   之後可以改成用時間驅動觸發器每月自動跑一次。
 - **LINE 提醒也吃「月份分頁要先建立好」這個限制**：下週的分頁不存在時
   不會發訊息，只會在執行記錄留下 `no_month_sheet_for_next_week`。
-- **LINE 的 @提及需要 userId**，靠員工自己按「連結 LINE 帳號」（LINE Login）
-  或在群組裡打「綁定」取得。沒連結的人一樣會被點名，只是沒有 @。
+- **催促私訊需要 userId**，員工從 LINE 的選單開一次班表就會自動取得。
+  一次都沒開過的人送不出去，管理頁會標成「無法提醒」。
   第三方沒有辦法代替本人取得 userId（`members/ids` 端點限認證帳號才能用）。
+- **好友狀態無法從程式判斷**。沒加官方帳號好友的人收不到私訊，但 LINE
+  仍然回 200，所以只能靠實機確認。
 - **Webhook 沒有驗簽章**。Apps Script 讀不到 HTTP 標頭，所以 `x-line-signature`
   無法驗證，改用網址上的 `?line={LINE_WEBHOOK_KEY}` 當作合言葉。
 - **Email 寫在每個月分頁的 C 欄**。綁定時會把 Email 寫進所有既有月份分頁，

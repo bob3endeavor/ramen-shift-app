@@ -577,6 +577,7 @@
     font-weight:700; font-size:13px; box-shadow:0 3px 0 #05a648;
     transition:transform .08s ease, box-shadow .08s ease;
   }
+  .btn-line{ text-decoration:none; text-align:center; }   /* <a> で使う場合 */
   .btn-line:active{ transform:translateY(2px); box-shadow:0 1px 0 #05a648; }
   .btn-line:disabled{ background:#c8bfa9; box-shadow:none; cursor:not-allowed; }
   .line-error{ font-size:11px; color:var(--chili); margin:8px 0 0; }

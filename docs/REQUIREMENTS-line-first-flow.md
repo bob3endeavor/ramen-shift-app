@@ -160,12 +160,11 @@ LINE 官方帳號免費方案是**每月 200 則**，而且未來加的所有通
 
 ## 五、Google 登入的角色調整：只留給管理員
 
-- `frontend/index.html`（Google 登入版）：**從此只給管理員使用**，
-  員工不再需要、也不再引導使用這個入口。
-- 實務上可以直接讓 `index.html` 變成「管理員 App 的別名／捷徑」，或
-  乾脆把現有的員工用邏輯整個拿掉，只留下「登入 → 判斷是否為
-  `ADMIN_EMAILS` → 是則導向 `admin.html`，不是則顯示『請改用 LINE
-  提交班表』的提示頁」。
+- **已實作**：`frontend/index.html` 只剩下「振り分け」——員工看到
+  「請從 LINE 填班表」＋ LIFF 連結，管理員按「我是管理員」走 Google 登入，
+  登入成功就直接導向 `admin.html`。員工用的表單整個移到 `liff-shift.html`。
+- `admin.html` 裡原本指向 `index.html` 的員工連結（「前往員工頁面」、
+  「切換到員工畫面」）也改成指向 LIFF，店長自己填班表一樣走 LINE。
 - `admin.html` 本身不變。
 
 ## 六、Rich Menu（為「店舗OS」擴充預留位置）

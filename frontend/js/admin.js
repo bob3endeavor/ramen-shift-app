@@ -23,6 +23,21 @@
 
   const $ = function (id) { return document.getElementById(id); };
 
+  /**
+   * 班表の入口は LINE（LIFF）に移したので、員工向けのリンクは
+   * index.html ではなく LIFF に送る。店長が自分の班を出すときも同じ。
+   */
+  const LIFF_URL = (typeof isLiffConfigured !== 'undefined' && isLiffConfigured)
+    ? 'https://liff.line.me/' + CONFIG.LIFF_ID
+    : '';
+
+  function setLiffLink(id) {
+    const el = $(id);
+    if (!el) return;
+    if (!LIFF_URL) { el.style.display = 'none'; return; }
+    el.href = LIFF_URL;
+  }
+
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
   function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
   function fmtMD(d) { return `${d.getMonth() + 1}/${d.getDate()}`; }
@@ -159,13 +174,18 @@
       if (!isAdmin) {
         hideBanner();
         $('denyEmail').textContent = who.email;
+        setLiffLink('denyLiffBtn');
+        $('denyLiffBtn').style.display = LIFF_URL ? 'block' : 'none';
         showOnly(denyGate);
         return;
       }
 
       state.email = who.email;
       // 員工でもある管理員（店長）には、員工畫面へ戻る導線を出す
-      if (who.role === 'employee') $('toStaffLink').style.display = 'inline';
+      if (who.role === 'employee' && LIFF_URL) {
+        setLiffLink('toStaffLink');
+        $('toStaffLink').style.display = 'inline';
+      }
       await enterAdmin();
     } finally {
       state.signingIn = false;

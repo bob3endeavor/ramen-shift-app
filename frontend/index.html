@@ -3,15 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Ming Ramen Bar｜排班意願申請</title>
+<title>Ming Ramen Bar｜排班系統</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
-/* 例外で画面が真っ白のまま終わらないよう、エラーを画面上に出す。
-   スマホでは開発者ツールが見られないので、これが唯一の手掛かりになる。 */
+/* 例外で画面が真っ白のまま終わらないよう、エラーを画面上に出す。 */
 (function () {
   function show(msg) {
     var el = document.getElementById('fatalError');
@@ -37,24 +36,45 @@
 </head>
 <body>
 
+<!--
+  員工の排班は LINE（リッチメニュー → LIFF）に移したので、このページは
+  「管理員の入口」と「員工を LINE へ案内する道しるべ」だけになった。
+  員工用のフォームは liff-shift.html にある。
+-->
 <div class="phone">
   <div class="noren">
     <span class="demo-badge" id="demoBadge" style="display:none;">DEMO</span>
-    <p class="eyebrow">MING RAMEN BAR ・ 員工專用</p>
-    <h1>排班意願申請</h1>
-    <p>點選送出，直接反映到班表</p>
+    <p class="eyebrow">MING RAMEN BAR</p>
+    <h1>排班系統</h1>
+    <p>員工請從 LINE 進入</p>
   </div>
 
   <div id="syncBanner" class="sync-banner"></div>
 
-  <!-- ============ GATE A: 未登入 ============ -->
+  <!-- ============ 員工向け：LINE へ案内（既定でこれが出る） ============ -->
+  <div class="gate" id="staffGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">FOR STAFF</p>
+      <h2>請從 LINE 填班表</h2>
+      <p class="gate-text">
+        填希望排班不用登入了。打開 LINE 的<b>店家官方帳號</b>，
+        點下面選單的 <b>「📅 提交班表」</b>就會直接進入班表。
+      </p>
+      <a class="btn-line" id="openLiffBtn" href="#" style="display:none;">用 LINE 開啟班表</a>
+      <p class="gate-text" id="liffMissing" style="display:none;">
+        （系統還沒設定好 LINE 入口，請聯絡店長。）
+      </p>
+      <button class="btn-link" id="toAdminBtn">我是管理員，要看全員班表</button>
+    </div>
+  </div>
+
+  <!-- ============ 管理員向け：Google 登入 ============ -->
   <div class="gate" id="authGate" style="display:none;">
     <div class="gate-card">
-      <p class="gate-eyebrow">STEP 00</p>
-      <h2>請先登入</h2>
+      <p class="gate-eyebrow">ADMIN LOGIN</p>
+      <h2>請以管理員帳號登入</h2>
       <p class="gate-text">
-        使用你的 Google 帳號登入，系統會自動對應到你的員工姓名，
-        之後只會顯示與你相關的班表。
+        只有登記在 <code>ADMIN_EMAILS</code> 裡的 Google 帳號可以進入管理頁。
       </p>
       <div class="gsi-slot" id="gsiButton"></div>
       <div class="gate-busy" id="authBusy" hidden>
@@ -62,179 +82,115 @@
         <span id="authBusyText">登入中…</span>
       </div>
       <p class="gate-error" id="authError"></p>
+      <button class="btn-link" id="backToStaffBtn">← 我是員工</button>
     </div>
   </div>
 
-  <!-- ============ GATE B: 首次登入，尚未綁定姓名 ============ -->
-  <div class="gate" id="bindGate" style="display:none;">
+  <!-- ============ 管理員ではなかった ============ -->
+  <div class="gate" id="denyGate" style="display:none;">
     <div class="gate-card">
-      <p class="gate-eyebrow">FIRST TIME</p>
-      <h2>請選擇你的姓名</h2>
+      <p class="gate-eyebrow">FORBIDDEN</p>
+      <h2>沒有管理權限</h2>
       <p class="gate-text">
-        歡迎，<b id="bindEmail"></b><br>
-        這是你第一次登入。請從名單中選擇你的姓名，
-        送出後這個 Google 帳號就會<b>永久對應</b>到這位員工，之後不需要再選。
+        <b id="denyEmail"></b> 不在管理員名單內。<br>
+        如果你是員工，請改用 LINE 的選單填班表。
       </p>
-      <div class="select-wrap">
-        <select id="bindSelect">
-          <option value="" disabled selected>請選擇姓名</option>
-        </select>
-      </div>
-      <button class="btn-primary" id="bindBtn" disabled>確認綁定</button>
-      <p class="gate-error" id="bindError"></p>
-      <button class="btn-link" id="bindSignOut">改用其他 Google 帳號登入</button>
-    </div>
-  </div>
-
-  <!-- ============ 管理員誤入員工頁 ============ -->
-  <div class="gate" id="adminGate" style="display:none;">
-    <div class="gate-card">
-      <p class="gate-eyebrow">ADMIN</p>
-      <h2>你是管理員</h2>
-      <p class="gate-text">
-        <b id="adminEmail"></b> 在管理員名單內。<br>
-        這個頁面是給員工填寫自己的希望排班用的，請改用管理頁查看全員班表。
-      </p>
-      <a class="btn-primary" id="toAdminLink" href="admin.html">前往管理員頁面</a>
-      <button class="btn-link" id="adminSignOut">改用其他 Google 帳號登入</button>
-    </div>
-  </div>
-
-  <!-- ============ GATE C: 管理員兼員工 → 要進哪個畫面 ============ -->
-  <div class="gate" id="chooseGate" style="display:none;">
-    <div class="gate-card">
-      <p class="gate-eyebrow">WELCOME</p>
-      <h2>要進入哪個畫面？</h2>
-      <p class="gate-text">
-        <b id="chooseName"></b><br>
-        你同時是<b>管理員</b>與<b>員工</b>，兩個畫面都可以使用。
-        進去之後也隨時可以互相切換。
-      </p>
-      <div class="choose-grid">
-        <button class="choose-btn" id="chooseStaff">
-          <span class="c-title">員工畫面</span>
-          <span class="c-desc">填寫自己的<br>希望排班</span>
-        </button>
-        <a class="choose-btn" href="admin.html">
-          <span class="c-title">管理員畫面</span>
-          <span class="c-desc">查看全員<br>班表</span>
-        </a>
-      </div>
-      <button class="btn-link" id="chooseSignOut">改用其他 Google 帳號登入</button>
-    </div>
-  </div>
-
-  <!-- ============ 主畫面 ============ -->
-  <div id="appMain" style="display:none;">
-
-    <!-- 身分（登入後由後端反查，不可更改） -->
-    <div class="section">
-      <div class="section-title"><span class="num">00</span><h2>你的身分</h2></div>
-      <div class="me-card">
-        <div class="me-main">
-          <span class="me-name" id="meName">—</span>
-          <span class="role-chip" id="roleChip" style="display:none;"></span>
-        </div>
-        <span class="me-email" id="meEmail"></span>
-        <button class="btn-link" id="signOutBtn">登出</button>
-      </div>
-      <!-- 管理員兼員工（店長）のときだけ出る -->
-      <div class="admin-link-row" id="adminLinkRow" style="display:none;">
-        <span class="admin-badge">ADMIN</span>
-        <a href="admin.html">你也是管理員 — 查看全員班表 →</a>
-      </div>
-
-      <!-- LINE 連結（後端設定好 LINE Login 之後才會出現） -->
-      <div class="line-row" id="lineRow" style="display:none;">
-        <div class="line-info">
-          <span class="line-badge" id="lineBadge">LINE</span>
-          <div class="line-text">
-            <b id="lineStatus">尚未連結</b>
-            <span id="lineDesc">連結後，忘記填班表時 LINE 群組的提醒會直接 @ 你。</span>
-          </div>
-        </div>
-        <button class="btn-line" id="lineLinkBtn">連結 LINE 帳號</button>
-        <button class="btn-link" id="lineUnlinkBtn" style="display:none;">解除連結</button>
-        <p class="line-error" id="lineError"></p>
-      </div>
-    </div>
-
-    <!-- STEP 1: next week Mon-Sun picker -->
-    <div class="section">
-      <div class="section-title"><span class="num">01</span><h2>點選希望上班的日期</h2></div>
-      <p class="week-note" id="weekNote"></p>
-      <button class="btn-copy-week" id="copyLastWeekBtn">↩ 套用上週的班表</button>
-      <p class="copy-week-hint">只會填還空著的日子，已經填好的不會被改掉。</p>
-      <div class="day-strip" id="dayStrip"></div>
-    </div>
-
-    <!-- STEP 2: preview（只顯示自己 + 與自己重疊的同事） -->
-    <div class="section">
-      <div class="section-title"><span class="num">02</span><h2>班表反映預覽</h2><span class="sub">只顯示與你重疊的人</span></div>
-      <div class="preview-wrap"><table class="matrix" id="matrixTable"></table></div>
-      <div class="overlap-summary" id="overlapSummary"></div>
-    </div>
-
-    <!-- STEP 3: 工時試算 -->
-    <div class="section" style="margin-bottom:20px;">
-      <div class="section-title"><span class="num">03</span><h2>工時試算</h2><span class="sub" id="hoursMonthLabel"></span></div>
-      <div class="hours-grid">
-        <div class="hours-card primary">
-          <span class="h-label">本月累計已上</span>
-          <span class="h-value"><b id="monthHours">—</b><span class="h-unit">小時</span></span>
-          <span class="h-sub" id="monthHoursSub">讀取中…</span>
-        </div>
-        <div class="hours-card">
-          <span class="h-label">下週希望排班</span>
-          <span class="h-value"><b id="weekHours">0</b><span class="h-unit">小時</span></span>
-          <span class="h-sub" id="weekHoursSub">尚未選擇</span>
-        </div>
-      </div>
-      <div class="note">
-        時數依照試算表上「已寫入的班別」計算（排休不計）。本月累計只算到今天為止，
-        若店長還沒建立本月分頁，數字會顯示為 0。
-      </div>
+      <a class="btn-line" id="denyLiffBtn" href="#" style="display:none;">用 LINE 開啟班表</a>
+      <button class="btn-link" id="denySignOut">改用其他 Google 帳號登入</button>
     </div>
   </div>
 </div>
-
-<div class="submit-bar" id="submitBar" style="display:none;">
-  <div class="count">已選擇：<b id="pickedName">—</b>　共 <b id="pickedCount">0</b> 天</div>
-  <button class="btn-submit" id="submitBtn" disabled>送出班表</button>
-</div>
-
-<div class="overlay" id="overlay"></div>
-<div class="sheet" id="sheet">
-  <div class="grabber"></div>
-  <h3 id="sheetDate">8月31日（一）</h3>
-  <p class="sheet-sub">請選擇班別，或選擇排休</p>
-
-  <div class="preset-grid" id="presetGrid"></div>
-  <div class="divider-label">或自訂時間</div>
-  <div class="time-row">
-    <div class="time-field" id="startField">
-      <label>上班時間</label>
-      <select id="startSelect"></select>
-    </div>
-    <div class="time-field" id="endField">
-      <label>下班時間</label>
-      <select id="endSelect"></select>
-    </div>
-  </div>
-  <p class="range-hint" id="rangeHint"></p>
-
-  <button class="off-btn" id="offBtn">🛌　排休（本日不上班）</button>
-  <div class="sheet-actions">
-    <button class="btn-clear" id="clearBtn">刪除這天</button>
-    <button class="btn-ok" id="okBtn">確認設定</button>
-  </div>
-</div>
-
-<div class="stamp-toast" id="stampToast">已送出</div>
 
 <script src="js/config.js"></script>
-<script src="js/demo-data.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/app.js"></script>
+<script>
+/**
+ * このページの役割は振り分けだけ：
+ *   員工   → LINE（LIFF）へ案内する
+ *   管理員 → Google ログインして admin.html へ送る
+ * 班表そのものの処理は liff-shift.html（+ app.js）が持っている。
+ */
+(function () {
+  const $ = function (id) { return document.getElementById(id); };
+  const staffGate = $('staffGate');
+  const authGate = $('authGate');
+  const denyGate = $('denyGate');
+
+  function showOnly(el) {
+    [staffGate, authGate, denyGate].forEach(function (node) {
+      node.style.display = node === el ? 'block' : 'none';
+    });
+  }
+
+  const liffUrl = (typeof isLiffConfigured !== 'undefined' && isLiffConfigured)
+    ? 'https://liff.line.me/' + CONFIG.LIFF_ID
+    : '';
+
+  ['openLiffBtn', 'denyLiffBtn'].forEach(function (id) {
+    const el = $(id);
+    if (liffUrl) { el.href = liffUrl; el.style.display = 'block'; }
+  });
+  if (!liffUrl) $('liffMissing').style.display = 'block';
+
+  if (typeof isDemoMode !== 'undefined' && isDemoMode) {
+    $('demoBadge').style.display = 'inline-block';
+  }
+
+  $('toAdminBtn').onclick = function () { showOnly(authGate); startSignIn(); };
+  $('backToStaffBtn').onclick = function () { showOnly(staffGate); };
+  $('denySignOut').onclick = function () { Auth.signOut(); location.reload(); };
+
+  let signingIn = false;
+
+  function setBusy(busy, text) {
+    const slot = $('gsiButton');
+    const busyEl = $('authBusy');
+    if (slot) slot.style.display = busy ? 'none' : 'flex';
+    if (busyEl) {
+      busyEl.hidden = !busy;
+      if (busy && text) $('authBusyText').textContent = text;
+    }
+  }
+
+  async function startSignIn() {
+    if (signingIn) return;
+    signingIn = true;
+    $('authError').textContent = '';
+    setBusy(false);
+
+    try {
+      await Auth.signIn($('gsiButton'));
+    } catch (err) {
+      signingIn = false;
+      setBusy(false);
+      $('authError').textContent = err.message;
+      return;
+    }
+
+    setBusy(true, '登入成功，確認身分中…');
+    try {
+      const who = await Auth.whoami();
+      setBusy(false);
+      if (!who.ok) {
+        $('authError').textContent = Auth.describeError(who.error);
+        return;
+      }
+      // 管理員なら管理頁へ。員工でもある店長も、班表は LINE から出す。
+      if (who.isAdmin || who.role === 'admin') {
+        location.href = 'admin.html';
+        return;
+      }
+      $('denyEmail').textContent = who.email || '';
+      showOnly(denyGate);
+    } finally {
+      signingIn = false;
+    }
+  }
+
+  Auth.onAuthLost = function () { showOnly(staffGate); };
+  showOnly(staffGate);
+})();
+</script>
+
 </body>
 </html>

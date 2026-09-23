@@ -447,6 +447,113 @@
     renderLineRow();
   });
 
+  /* ---------------- 套用上週的班表 ----------------
+   * 毎週ほぼ同じ人には「先週と同じ」が一番速い。上週（＝いま進行中の週）
+   * の自分の内容を、下週の**まだ空いている日**にだけ複製する。
+   *
+   * ・曜日は同じ位置同士で対応させる（土曜の遅い終業が平日にずれない）
+   * ・すでに自分で入れた日は上書きしない
+   * ・上週が空白だった日は飛ばす
+   * ・確認ダイアログで中身を見せてから、その場で試算表に書き込む
+   *   （このページは「押したものは保存される」で統一してある）
+   */
+
+  const lastWeekDays = state.days.map(function (d) {
+    const x = new Date(d);
+    x.setDate(d.getDate() - 7);
+    return x;
+  });
+
+  /** getWeek は日付リストを受け取るので、上週の取得にそのまま流用できる */
+  async function fetchLastWeek() {
+    if (isDemoMode) {
+      const mine = {};
+      lastWeekDays.forEach(function (d, i) { mine[ymd(d)] = DEMO_LAST_WEEK[i] || ''; });
+      return { ok: true, mine: mine };
+    }
+    return Auth.get('getWeek', { dates: lastWeekDays.map(ymd).join(',') });
+  }
+
+  /** 何日ぶんを、どう埋めるか。書き込む前に確認ダイアログで見せる */
+  function planCopyFromLastWeek(mine) {
+    const plan = [];
+    state.days.forEach(function (d, i) {
+      const key = ymd(d);
+      if (state.requests[key]) return;                 // 既に入れた日は守る
+      if (state.weekErrors[key]) return;               // 分頁が無い日は書けない
+      const entry = parseServerValue(mine[ymd(lastWeekDays[i])]);
+      if (!entry) return;                              // 上週が空白の日は飛ばす
+      plan.push({ key: key, date: d, entry: entry });
+    });
+    return plan;
+  }
+
+  function copyPayload(key, entry) {
+    if (entry.off) return { date: key, off: true };
+    const parts = entry.raw.split('-');
+    return { date: key, off: false, start: parts[0], end: parts[1] };
+  }
+
+  function setCopyBusy(busy, label) {
+    const btn = $('copyLastWeekBtn');
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.textContent = busy ? (label || '處理中…') : '↩ 套用上週的班表';
+  }
+
+  onClick('copyLastWeekBtn', async function () {
+    if (state.saving) return;
+
+    setCopyBusy(true, '讀取上週…');
+    const res = await fetchLastWeek();
+    if (!res.ok) {
+      setCopyBusy(false);
+      showBanner('error', '⚠ 無法讀取上週班表：' + Auth.describeError(res.error));
+      return;
+    }
+
+    const plan = planCopyFromLastWeek(res.mine || {});
+    setCopyBusy(false);
+    if (!plan.length) {
+      showBanner('warn', '沒有可以套用的日子（上週是空的，或下週已經填好了）');
+      setTimeout(hideBanner, 2800);
+      return;
+    }
+
+    const preview = plan.map(function (p) {
+      return '・' + fmtMD(p.date) + '（' + DOW_ZH[p.date.getDay()] + '） ' + p.entry.text;
+    }).join('\n');
+    if (!confirm('要照上週的內容填這 ' + plan.length + ' 天嗎？\n已經填好的日子不會被改掉。\n\n' + preview)) return;
+
+    setCopyBusy(true, '套用中…');
+    state.saving = true;
+    let done = 0;
+    for (let i = 0; i < plan.length; i++) {
+      const p = plan[i];
+      const result = await saveToServer(copyPayload(p.key, p.entry));
+      if (!result.ok) {
+        state.saving = false;
+        setCopyBusy(false);
+        renderAll();
+        alert('套用到一半失敗了（已完成 ' + done + ' 天）\n' + Auth.describeError(result.error));
+        return;
+      }
+      state.requests[p.key] = p.entry;
+      if (isDemoMode) {
+        if (!state.demoWeek[p.key]) state.demoWeek[p.key] = {};
+        state.demoWeek[p.key][state.me.name] =
+          p.entry.off ? '排休\nday off' : p.entry.raw.replace('-', '\n');
+      }
+      done++;
+    }
+    state.saving = false;
+    setCopyBusy(false);
+    renderAll();
+    refreshOverlaps();
+    showBanner('ok', '已套用上週的 ' + done + ' 天，確認後請按「送出班表」');
+    setTimeout(hideBanner, 3200);
+  });
+
   /* ---------------- 讀取本週資料 ---------------- */
 
   async function loadWeek() {

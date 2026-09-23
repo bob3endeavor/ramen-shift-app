@@ -27,6 +27,21 @@ const DEMO_PATTERNS = {
 /** 示範模式下「登入的人」是誰（對應 whoami 的回傳） */
 const DEMO_ME = { name: "林欣霈", role: "PT", email: "demo.staff@example.com" };
 
+/**
+ * 示範模式下「上週」DEMO_ME 自己填過的內容（一〜日，共 7 天）。
+ * 「套用上週的班表」按鈕在示範模式也能走完整個流程用的。
+ * 空字串＝那天沒填，按鈕會跳過不帶入。
+ */
+const DEMO_LAST_WEEK = [
+  "10:30\n15:30",
+  "排休\nday off",
+  "10:30\n15:30",
+  "",
+  "17:30\n21:30",
+  "10:30\n22:00",
+  "排休\nday off",
+];
+
 /** 示範模式下的管理員身分（admin.html 用） */
 const DEMO_ADMIN = { email: "demo.owner@example.com" };
 

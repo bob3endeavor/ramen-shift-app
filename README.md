@@ -55,6 +55,7 @@ ramen-shift-app/
 └── docs/
     ├── DEPLOY.md                      部署、OAuth 設定、clasp 開發環境
     ├── LINE-REMINDER.md               LINE 催繳提醒的設定步驟
+    ├── richmenu.html                  圖文選單的圖片產生器（開起來按一下就存檔）
     ├── REQUIREMENTS-line-first-flow.md  LIFF 化（員工入口改走 LINE）的規格
     └── REQUIREMENTS-auth-payroll.md   登入／權限／工時的需求規格
 ```

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rich Menu 圖片產生器｜Ming Ramen Bar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e1713; --paper:#f7f1e3; --paper-2:#efe6d1; --ink:#241c14;
+    --ink-soft:#4a4136; --chili:#c7402c; --chili-dark:#9c2f1f;
+    --yuzu:#e8b23d; --negi:#4c7a5e; --line-paper:#d9cdb0;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; padding:28px 20px 60px; background:var(--bg); color:var(--paper);
+    font-family:'Noto Sans TC', sans-serif; display:flex; flex-direction:column;
+    align-items:center; gap:18px;
+  }
+  h1{ font-family:'Noto Serif TC', serif; font-size:20px; margin:0; }
+  p{ font-size:13px; line-height:1.8; color:#cfc6b4; max-width:640px; margin:0; }
+  .panel{
+    background:var(--paper); color:var(--ink); border-radius:12px;
+    padding:16px 18px; max-width:680px; width:100%;
+  }
+  .panel h2{ font-family:'Noto Serif TC', serif; font-size:15px; margin:0 0 8px; }
+  .panel ol{ margin:0; padding-left:20px; font-size:12.5px; line-height:1.9; }
+  .panel code{ background:var(--paper-2); padding:1px 5px; border-radius:4px; }
+  /* 実寸 2500×843 を画面では縮小して見せる。書き出しは常に実寸。 */
+  #preview{ width:100%; max-width:680px; height:auto; border-radius:10px; display:block; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  button{
+    background:var(--chili); color:var(--paper); border:none; border-radius:9px;
+    padding:12px 22px; cursor:pointer; font-family:'Noto Sans TC', sans-serif;
+    font-weight:700; font-size:14px; box-shadow:0 3px 0 var(--chili-dark);
+  }
+  button:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--chili-dark); }
+  .hint{ font-size:11.5px; color:#a99f8c; }
+</style>
+</head>
+<body>
+
+<h1>Rich Menu 圖片產生器</h1>
+<p>
+  LINE 官方帳號的圖文選單要上傳一張圖。這頁會照 app 的配色畫一張
+  <b>2500 × 843</b>（compact 尺寸）的 PNG，按下面的按鈕就能存檔。
+</p>
+
+<canvas id="preview" width="2500" height="843"></canvas>
+
+<div class="row">
+  <button id="download">下載 PNG</button>
+</div>
+<p class="hint">檔名：richmenu-shift.png ・ 尺寸 2500×843 ・ 1 個按鈕（整條）</p>
+
+<div class="panel">
+  <h2>接著在 LINE 官方帳號後台設定</h2>
+  <ol>
+    <li>LINE Official Account Manager → <b>主頁 → 圖文選單</b> → 建立</li>
+    <li>版型選 <b>大（compact）的「1 格」</b>（整條一個區塊）</li>
+    <li>背景圖片上傳這張 PNG</li>
+    <li>動作選 <b>連結</b>，網址填 <code id="liffUrl">https://liff.line.me/{LIFF_ID}</code></li>
+    <li>選單列顯示文字：<b>排班</b>　／　預設顯示：<b>開啟</b></li>
+    <li>套用期間設成長期，然後儲存</li>
+  </ol>
+</div>
+
+<script src="../frontend/js/config.js"></script>
+<script>
+/**
+ * 2500×843 は LINE の compact サイズ。将来ボタンを増やすときは
+ * BUTTONS に足して、LINE 側の版型も分割ありのものに変えれば同じ絵で通る。
+ */
+const W = 2500, H = 843;
+const BUTTONS = [
+  { title: '📅  提交班表', sub: '填下週的希望排班' },
+];
+
+function drawRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function draw() {
+  const cv = document.getElementById('preview');
+  const ctx = cv.getContext('2d');
+
+  // 背景（アプリのヘッダーと同じ暗い緑）
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#16241d');
+  g.addColorStop(1, '#0e1713');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // 暖簾の縞（アプリの見出し下と同じ差し色）
+  const stripe = ['#c7402c', '#e8b23d', '#c7402c', '#4c7a5e', '#e8b23d'];
+  const sw = W / 40;
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = stripe[i % stripe.length];
+    ctx.globalAlpha = 0.9;
+    ctx.fillRect(i * sw, 0, sw - 2, 14);
+  }
+  ctx.globalAlpha = 1;
+
+  const n = BUTTONS.length;
+  const pad = 70;
+  const gap = 40;
+  const cellW = (W - pad * 2 - gap * (n - 1)) / n;
+  const cellH = H - pad * 2 - 20;
+
+  BUTTONS.forEach(function (b, i) {
+    const x = pad + i * (cellW + gap);
+    const y = pad + 20;
+
+    // カード
+    ctx.fillStyle = '#f7f1e3';
+    drawRoundRect(ctx, x, y, cellW, cellH, 28);
+    ctx.fill();
+    ctx.strokeStyle = '#d9cdb0';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    // 見出し
+    ctx.fillStyle = '#241c14';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = "700 130px 'Noto Serif TC', serif";
+    ctx.fillText(b.title, x + cellW / 2, y + cellH / 2 + 18);
+
+    // 補足
+    ctx.fillStyle = '#4a4136';
+    ctx.font = "500 56px 'Noto Sans TC', sans-serif";
+    ctx.fillText(b.sub, x + cellW / 2, y + cellH / 2 + 110);
+
+    // 左端に店名の縦アクセント
+    ctx.fillStyle = '#c7402c';
+    drawRoundRect(ctx, x + 34, y + cellH / 2 - 72, 12, 144, 6);
+    ctx.fill();
+  });
+
+  // 右下に小さく店名
+  ctx.fillStyle = 'rgba(247,241,227,.45)';
+  ctx.textAlign = 'right';
+  ctx.font = "400 34px 'DotGothic16', monospace";
+  ctx.fillText('MING RAMEN BAR', W - pad, H - 30);
+}
+
+// 手順の欄に実際の LIFF URL を出す（config.js と同じ値を二度書かないため）
+if (typeof isLiffConfigured !== 'undefined' && isLiffConfigured) {
+  document.getElementById('liffUrl').textContent = 'https://liff.line.me/' + CONFIG.LIFF_ID;
+}
+
+document.getElementById('download').onclick = function () {
+  const a = document.createElement('a');
+  a.download = 'richmenu-shift.png';
+  a.href = document.getElementById('preview').toDataURL('image/png');
+  a.click();
+};
+
+// フォントが来てから描かないと既定フォントで焼き付いてしまう
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+else window.addEventListener('load', draw);
+</script>
+
+</body>
+</html>

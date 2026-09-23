@@ -27,6 +27,7 @@
     saving: false,
     signingIn: false,  // 登入流程進行中（避免重複觸發）
     isAdmin: false,    // 管理員兼員工（店長）のとき true
+    canOpenAdmin: false,  // LIFF 版で管理頁への導線を出すか（権限ではない）
   };
 
   /* ---------------- date helpers ---------------- */
@@ -283,9 +284,13 @@
     // LINE 連携（後端が対応していなければ両方 undefined → 導線を出さない）
     state.lineLoginReady = !!who.lineLoginReady;
     state.lineLinked = !!who.lineLinked;
+    // LIFF 経由は管理員にならない代わりに、名簿の Email が ADMIN_EMAILS に
+    // ある人だけ「管理頁への導線を出してよい」と後端が教えてくれる。
+    // 権限ではないので、これで何かが許可されるわけではない。
+    state.canOpenAdmin = !!who.canOpenAdmin;
 
     // 管理員兼員工なら、どちらの畫面に入るかを選んでもらう
-    if (state.isAdmin) {
+    if (state.isAdmin || state.canOpenAdmin) {
       hideBanner();
       $('chooseName').textContent = `${state.me.name}${state.me.role ? '（' + state.me.role + '）' : ''}`;
       showOnly(chooseGate);
@@ -297,6 +302,28 @@
 
   onClick('chooseStaff', function () { enterApp(); });
   onClick('chooseSignOut', function () { Auth.signOut(); location.reload(); });
+
+  /**
+   * 管理頁は Google ログインが要る。LINE アプリの内蔵ブラウザでは
+   * Google の同意画面が動かず真っ白になるので、必ず外部ブラウザで開く。
+   * （index.html 版はただのリンクなので、ここは LIFF のときだけ効く）
+   */
+  function openAdminPage() {
+    const url = new URL('admin.html', location.href).href;
+    if (AUTH_MODE === 'liff' && window.liff && liff.openWindow) {
+      liff.openWindow({ url: url, external: true });
+      return;
+    }
+    location.href = url;
+  }
+
+  onClick('chooseAdmin', function () { openAdminPage(); });
+  if (AUTH_MODE === 'liff') {
+    onClick('toAdminLink', function (e) {
+      if (e && e.preventDefault) e.preventDefault();
+      openAdminPage();
+    });
+  }
 
   /* ---------------- 首次登入：綁定姓名 ---------------- */
 
@@ -367,7 +394,9 @@
     }
 
     const adminLinkRow = $('adminLinkRow');
-    if (adminLinkRow) adminLinkRow.style.display = state.isAdmin ? 'block' : 'none';
+    if (adminLinkRow) {
+      adminLinkRow.style.display = (state.isAdmin || state.canOpenAdmin) ? 'block' : 'none';
+    }
     renderLineRow();
 
     $('weekNote').innerHTML =

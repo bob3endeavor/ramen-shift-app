@@ -73,6 +73,32 @@ window.APP_AUTH_MODE = 'liff';
     </div>
   </div>
 
+  <!-- ============ 管理員兼員工 → 要進哪個畫面 ============
+       只有「名單上的 Email 在 ADMIN_EMAILS 裡」的人會看到這一頁，
+       其他員工不會出現。管理頁本身仍然要用 Google 登入，所以這裡
+       只是導線，不代表權限。 -->
+  <div class="gate" id="chooseGate" style="display:none;">
+    <div class="gate-card">
+      <p class="gate-eyebrow">WELCOME</p>
+      <h2>要進入哪個畫面？</h2>
+      <p class="gate-text">
+        <b id="chooseName"></b><br>
+        你同時是<b>管理員</b>與<b>員工</b>。管理頁會用瀏覽器開啟，
+        並需要另外用 Google 帳號登入。
+      </p>
+      <div class="choose-grid">
+        <button class="choose-btn" id="chooseStaff">
+          <span class="c-title">員工畫面</span>
+          <span class="c-desc">填寫自己的<br>希望排班</span>
+        </button>
+        <button class="choose-btn" id="chooseAdmin">
+          <span class="c-title">管理員畫面</span>
+          <span class="c-desc">查看全員<br>班表</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ 主畫面 ============ -->
   <div id="appMain" style="display:none;">
 
@@ -85,6 +111,11 @@ window.APP_AUTH_MODE = 'liff';
           <span class="role-chip" id="roleChip" style="display:none;"></span>
         </div>
         <span class="me-email" id="meEmail"></span>
+      </div>
+      <!-- 管理員兼員工のときだけ出る（管理頁は外部ブラウザで開く） -->
+      <div class="admin-link-row" id="adminLinkRow" style="display:none;">
+        <span class="admin-badge">ADMIN</span>
+        <a href="admin.html" id="toAdminLink">你也是管理員 — 查看全員班表 →</a>
       </div>
     </div>
 

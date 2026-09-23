@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-22 liff-auth';
+const CODE_VERSION = '2026-09-23 liff-admin-link';
 
 /* ============================================================
  * Script Properties
@@ -1794,7 +1794,13 @@ function resolveLineIdentity_(idToken) {
       auth: 'line',
       lineUserId: v.userId,
       email: '',
+      // LINE 経由では管理者権限そのものは与えない。名簿の C 欄 Email が
+      // ADMIN_EMAILS にある人にだけ「管理頁への導線を出すか」を返す。
+      // 導線を出すこと自体は何の権限も与えない —— admin.html 側は結局
+      // Google ログインで ADMIN_EMAILS を確かめるので、ここが偽っていても
+      // 管理頁には入れない。だから姓名の自己申告があっても昇格はしない。
       isAdmin: false,
+      canOpenAdmin: !!(me.email && getAdminEmails_().indexOf(me.email) !== -1),
       role: 'employee',
       name: me.name,
       roleTitle: me.role,
@@ -1923,6 +1929,8 @@ function handleWhoami_(who) {
     // LIFF から来ている場合は当然すでに紐付いているので、導線は出さない。
     out.lineLoginReady = who.auth === 'line' ? false : lineLoginReady_();
     out.lineLinked = who.auth === 'line' ? true : !!lineUserIdMap_()[who.name];
+    // 管理頁への導線を出すかどうか（権限ではない。LIFF 版の選択画面用）
+    out.canOpenAdmin = !!who.canOpenAdmin;
   }
   if (who.role === 'unregistered') out.unboundRoster = who.unboundRoster || [];
   return jsonOut_(out);

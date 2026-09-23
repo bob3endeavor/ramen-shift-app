@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-23 liff-admin-link';
+const CODE_VERSION = '2026-09-23 hide-email-col';
 
 /* ============================================================
  * Script Properties
@@ -366,6 +366,28 @@ function addNextMonthSheet() {
   return msg;
 }
 
+/**
+ * 既にある全部の排班分頁で Email 欄（C 欄）を隠す。
+ *
+ * Email はシステムが身分を引くために持っているだけで、店長が見るものでは
+ * ない。班表を開いたときに邪魔なので隠す。**隠しても読み書きは普通にできる**
+ * ので、ログインも綁定も従来どおり動く。
+ *
+ * 新しく作る分頁は createMonthSheet_ が最初から隠すので、これを実行するのは
+ * 「今ある分頁をまとめて隠したい」一度きりでよい。何度実行しても安全。
+ * （もう一度見たくなったら、試算表で B 欄と D 欄を選んで右クリック →
+ *   「列を再表示」で戻せる）
+ */
+function hideEmailColumn() {
+  const sheets = allMonthSheets_();
+  sheets.forEach(function (sh) { sh.hideColumns(EMAIL_COL); });
+
+  const msg = 'Email 欄を隠した分頁：' + sheets.length + ' 件\n' +
+    sheets.map(function (sh) { return '・' + sh.getName(); }).join('\n');
+  Logger.log(msg);
+  return msg;
+}
+
 /** 建立單一月份分頁；已存在則回傳 null（不覆蓋既有資料） */
 function createMonthSheet_(ss, year, month) {
   const name = month + '月排班班表';
@@ -433,6 +455,9 @@ function createMonthSheet_(ss, year, month) {
   sheet.setColumnWidth(ROLE_COL, 88);
   sheet.setColumnWidth(NAME_COL, 92);
   sheet.setColumnWidth(EMAIL_COL, 190);
+  // Email 欄は人が読むためのものではないので最初から隠しておく。
+  // 隠れていても getRange / setValue は普通に効くので動作には影響しない。
+  sheet.hideColumns(EMAIL_COL);
   for (let c = firstDataCol; c <= lastCol; c++) sheet.setColumnWidth(c, 62);
   sheet.setRowHeights(STAFF_START_ROW, lastRow - STAFF_START_ROW + 1, 38);
 

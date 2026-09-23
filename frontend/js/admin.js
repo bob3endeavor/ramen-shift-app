@@ -398,7 +398,8 @@
       renderReminder({
         config: { enabled: false, weekday: 5, hour: 12 },
         line: { tokenSet: false, targetSet: false, webhookKeySet: false, webhookUrl: '', linkedCount: 0 },
-        mentionable: [],
+        // 「可提醒」「無法提醒」が両方出るようにしておく（UIの確認用）
+        remindable: [{ name: '林欣霈', remindable: true }, { name: '王小明', remindable: false }],
         preview: { ok: true, count: 2, dates: state.days.map(ymd), targets: [
           { name: '林欣霈', missing: 7 }, { name: '王小明', missing: 2 },
         ] },
@@ -435,14 +436,14 @@
       ? `每${weekdayLabel(cfg.weekday)} ${cfg.hour} 時台`
       : '目前未啟用';
 
-    renderRemindPreview(res.preview, res.mentionable || []);
+    renderRemindPreview(res.preview, res.remindable || []);
     renderRemindSetup(line, res);
     renderNotify(res.notify);
     remindBusy(false);
   }
 
   /** 現在の「未提出者」一覧（＝いま送ったら誰が名指しされるか） */
-  function renderRemindPreview(preview, mentionable) {
+  function renderRemindPreview(preview, remindable) {
     const box = $('remindPreview');
     if (!preview) { box.innerHTML = ''; return; }
 
@@ -460,29 +461,44 @@
       return;
     }
 
-    const canMention = {};
-    mentionable.forEach(function (m) { canMention[m.name] = m.mentionable; });
+    const canRemind = {};
+    remindable.forEach(function (m) { canRemind[m.name] = m.remindable; });
 
+    // 個別 DM になったので、行ごとにチェックボックスを置く。
+    // 「立刻試送」はここで選んだ人にだけ送る（全員に迷惑をかけないため）。
     box.innerHTML = `<div class="remind-preview-head">${range} 尚未填完：${preview.targets.length} 人</div>` +
       preview.targets.map(function (t) {
-        const m = canMention[t.name];
-        return `<div class="remind-row">
+        const ok = canRemind[t.name];
+        return `<label class="remind-row${ok ? '' : ' off'}">
+          <input type="checkbox" class="rr-pick" value="${t.name}"${ok ? '' : ' disabled'}>
           <span class="rr-name">${t.name}</span>
           <span class="rr-missing">還有 ${t.missing} 天沒填</span>
-          <span class="rr-mention${m ? ' on' : ''}">${m ? '@ 可點名' : '未連結 LINE'}</span>
-        </div>`;
-      }).join('');
+          <span class="rr-mention${ok ? ' on' : ''}">${ok ? '可提醒' : '無法提醒'}</span>
+        </label>`;
+      }).join('') +
+      (preview.targets.some(function (t) { return !canRemind[t.name]; })
+        ? `<div class="remind-empty">「無法提醒」的人還沒用 LINE 開過排班頁，
+            系統不知道要傳給誰。請另外用口頭或群組告知他們開一次。</div>`
+        : '');
+  }
+
+  /** 試送で選ばれている姓名 */
+  function pickedForTest() {
+    return [...document.querySelectorAll('#remindPreview .rr-pick:checked')]
+      .map(function (el) { return el.value; });
   }
 
   /** LINE 側のセットアップがどこまで済んでいるかを出す */
   function renderRemindSetup(line, res) {
-    const required = [
-      ['Channel access token', line.tokenSet],
-      ['提醒的 LINE 群組', line.targetSet],
-      ['Webhook 密鑰', line.webhookKeySet],
-    ];
+    // 提醒が個別 DM になったので、必須はトークンだけ。
+    // 群組と Webhook は「綁定」指令と群組 ID の記録のために残っている。
+    const required = [['Channel access token', line.tokenSet]];
     const done = required.every(function (r) { return r[1]; });
-    const rows = required.concat([['LINE Login（員工自助連結）', !!line.loginReady]]);
+    const rows = required.concat([
+      ['LIFF（員工從 LINE 開班表）', !!line.loginReady],
+      ['提醒的 LINE 群組（綁定指令用）', line.targetSet],
+      ['Webhook 密鑰', line.webhookKeySet],
+    ]);
 
     let html = rows.map(function (r) {
       return `<div class="setup-row"><span>${r[0]}</span><b class="${r[1] ? 'ok' : 'ng'}">${r[1] ? '已設定' : '未設定'}</b></div>`;
@@ -498,12 +514,12 @@
           LINE Login 會失敗。要填 <code>script.google.com/macros/s/…/exec</code>
           （不是在瀏覽器打開後網址列上的 googleusercontent 網址）。</div>`;
     if (!done) {
-      html += `<div class="setup-hint">設定步驟見 <code>docs/LINE-REMINDER.md</code>。前三項都「已設定」之後才能打開自動提醒。</div>`;
+      html += `<div class="setup-hint">設定步驟見 <code>docs/LINE-REMINDER.md</code>。Channel access token 設好之後才能打開自動提醒。</div>`;
     } else {
       html += `<div class="setup-hint">
-        還沒連結 LINE 的人只會用姓名列出、不會被 @ 點名。目前已連結 ${line.linkedCount || 0} 人。<br>
+        提醒是一對一私訊，所以沒用過 LIFF 的人收不到（名單上會標「無法提醒」）。目前已連結 ${line.linkedCount || 0} 人。<br>
         ${line.loginReady
-          ? '請員工在員工頁按「連結 LINE 帳號」（LINE 的暱稱跟班表姓名不同也沒關係）。'
+          ? '請員工從 LINE 的選單開一次排班頁，開過就會自動連結。'
           : '設定 LINE Login 之後，員工就能在員工頁自己按一顆按鈕完成連結；' +
             '在那之前只能請他們在群組裡傳「綁定 你的姓名」。'}
       </div>`;
@@ -539,11 +555,18 @@
   };
 
   $('remindTestBtn').onclick = async function () {
-    if (!confirm('現在就送一則提醒到 LINE 群組（群組成員都會看到）。要繼續嗎？')) return;
+    // 試送で全員に本物の催促が飛ぶと迷惑なので、勾選した人だけに送る
+    const names = pickedForTest();
+    if (!names.length) {
+      setRemindMsg('warn', '請先在上面的名單勾選 1～2 位當作試送對象。');
+      return;
+    }
+    if (!confirm(`現在就傳提醒給這 ${names.length} 位：\n\n${names.join('\n')}\n\n` +
+      '這是真的私訊，不是預覽。要繼續嗎？')) return;
 
     remindBusy(true);
     setRemindMsg('', '傳送中…');
-    const res = await Auth.post({ action: 'sendReminderTest' });
+    const res = await Auth.post({ action: 'sendReminderTest', names: names });
     remindBusy(false);
 
     if (!res.ok) {
@@ -554,9 +577,10 @@
     if (res.skipped === 'all_submitted') {
       setRemindMsg('ok', '全員都填完了，所以沒有送出訊息。');
     } else {
-      setRemindMsg('ok', res.mentionFailed
-        ? `已送出：點名 ${res.count} 人。（@ 提及被 LINE 退回，已改用純文字重送；多半是已離開群組的人還留在「LINE連携」分頁裡）`
-        : `已送出：點名 ${res.count} 人（其中 ${res.mentioned} 人有 @ 提及）`);
+      // push は「友だちでない相手」にも 200 を返すので、届いたことは保証できない
+      setRemindMsg('ok',
+        `已傳給 ${(res.sentTo || []).length} 位：${(res.sentTo || []).join('、')}。` +
+        `請向對方確認真的有收到 —— 沒加官方帳號好友的話，LINE 不會報錯但訊息不會出現。`);
     }
     await loadReminder();
   };

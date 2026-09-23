@@ -624,3 +624,11 @@
     margin-top:-1px; padding-top:12px;
   }
   .fold-body .note{ margin-top:10px; }
+
+  /* 個別DMになったので、試送対象を選ぶチェックボックスを行に置く */
+  .remind-preview label.remind-row{ cursor:pointer; }
+  .remind-preview label.remind-row.off{ opacity:.65; cursor:default; }
+  .remind-preview .rr-pick{
+    width:16px; height:16px; flex:0 0 16px; accent-color:var(--chili); cursor:pointer;
+  }
+  .remind-preview .rr-pick:disabled{ cursor:default; }

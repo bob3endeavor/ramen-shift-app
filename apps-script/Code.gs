@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-23 hide-email-col';
+const CODE_VERSION = '2026-09-23 dm-reminder';
 
 /* ============================================================
  * Script Properties
@@ -676,6 +676,16 @@ function lineToken_() { return (props_().getProperty('LINE_CHANNEL_ACCESS_TOKEN'
 function lineTargetId_() { return (props_().getProperty('LINE_TARGET_ID') || '').trim(); }
 function lineWebhookKey_() { return (props_().getProperty('LINE_WEBHOOK_KEY') || '').trim(); }
 function appUrl_() { return (props_().getProperty('APP_URL') || '').trim(); }
+function liffId_() { return (props_().getProperty('LIFF_ID') || '').trim(); }
+
+/**
+ * DM から排班フォームを直接開くためのリンク。
+ * LIFF の URL なら LINE アプリ内でそのまま開き、ログイン操作も要らない。
+ * 未設定なら APP_URL（ブラウザ版）にフォールバックする。
+ */
+function liffUrl_() {
+  return isSet_(liffId_()) ? 'https://liff.line.me/' + liffId_() : '';
+}
 
 /** 真的設定過（而且不是 PASTE_ 佔位字串）才算設定完成 */
 function isSet_(v) { return !!v && String(v).indexOf('PASTE_') !== 0; }
@@ -889,62 +899,35 @@ function mdLabel_(dateStr) {
   return (d.getMonth() + 1) + '/' + d.getDate();
 }
 
-/** textV2 會把 {} 當成變數語法，純文字要跳脫 */
-function escapeTextV2_(s) {
-  return String(s == null ? '' : s).replace(/([{}\\])/g, '\\$1');
+/**
+ * 未提出者ひとりぶんの DM 本文。
+ *
+ * 群組で全員に晒すのをやめて個別 DM にしたので、宛先本人のことだけ書く。
+ * 末尾の LIFF リンクを押せば、そのまま排班フォームが開く。
+ */
+function buildDmText_(target, dates) {
+  const range = mdLabel_(dates[0]) + '〜' + mdLabel_(dates[dates.length - 1]);
+  const lines = [
+    '🍜 下週（' + range + '）的希望排班還沒填完喔。',
+    '你還有 ' + target.missing + ' 天沒填，請抽空補一下。',
+    '不上班的日子也要選「排休」才算填完。',
+  ];
+  const url = liffUrl_() || appUrl_();
+  if (isSet_(url)) lines.push('👉 ' + url);
+  return lines.join('\n');
 }
 
-/**
- * 回傳 { messages, previewText, mentioned }。
- * 對得上 userId 的人用 @提及（textV2 的 substitution），
- * 對不上的人就只寫姓名，不會因此漏掉任何人。
- */
-function buildReminderMessage_(result) {
+/** 管理頁のプレビュー用。実際に送る本文ではなく「誰に何が飛ぶか」の要約 */
+function buildReminderPreview_(result, remindable) {
   const dates = result.dates;
   const range = mdLabel_(dates[0]) + '〜' + mdLabel_(dates[dates.length - 1]);
-  const userIds = lineUserIdMap_();
-
-  const substitution = {};
-  const lines = [];
-  const previewLines = [];
-  let mentioned = 0;
-
-  result.targets.forEach(function (p, i) {
-    const days = '還有 ' + p.missing + ' 天沒填';
-    const uid = userIds[p.name];
-    if (uid) {
-      const key = 'u' + i;
-      substitution[key] = { type: 'mention', mentionee: { type: 'user', userId: uid } };
-      lines.push('・{' + key + '}（' + escapeTextV2_(days) + '）');
-      mentioned++;
-    } else {
-      lines.push('・' + escapeTextV2_(p.name) + '（' + escapeTextV2_(days) + '）');
-    }
-    previewLines.push('・' + p.name + (uid ? ' [@提及]' : '') + '（' + days + '）');
+  const lines = result.targets.map(function (p) {
+    return '・' + p.name + '（還有 ' + p.missing + ' 天沒填）' +
+      (remindable[p.name] ? '' : ' ← 尚未綁定 LINE，無法提醒');
   });
-
-  const head = '🍜 下週（' + range + '）的希望排班還沒填完的人：';
-  const tail = ['請在這週內填好；不上班的日子也要選「排休」才算填完。'];
-  if (isSet_(appUrl_())) tail.push('👉 ' + appUrl_());
-
-  const body = lines.join('\n');
-  const text = head + '\n\n' + body + '\n\n' + tail.join('\n');
-  const previewText = head + '\n\n' + previewLines.join('\n') + '\n\n' + tail.join('\n');
-
-  // 跳脫記号を戻した、@提及 なしの版。一人も紐付いていないときの本番用と、
-  // 退会者の userId が混ざって textV2 が弾かれたときの再送用を兼ねる。
-  const plain = { type: 'text', text: text.replace(/\\([{}\\])/g, '$1') };
-  const message = mentioned
-    ? { type: 'textV2', text: text, substitution: substitution }
-    : plain;
-
-  return {
-    messages: [message],
-    fallback: [plain],
-    previewText: previewText,
-    mentioned: mentioned,
-  };
+  return '下週（' + range + '）未填完：' + result.targets.length + ' 人\n' + lines.join('\n');
 }
+
 
 /* ------------------------------------------------------------
  * LINE API
@@ -995,25 +978,45 @@ function lineReply_(replyToken, text) {
  * ---------------------------------------------------------- */
 
 /**
- * dryRun=true 時只算出名單與本文，不呼叫 LINE。
- * 全員都填完了就不發訊息（回 skipped:'all_submitted'）。
+ * 催促の本体。未提出者**ひとりずつに個人 DM** を送る。
+ *
+ * 以前は群組に 1 通投げて全員を @提及 していたが、
+ *   ・同僚同士で誰が出していないか見えてしまう（班表を互いに見せない方針と矛盾）
+ *   ・群組という構造に依存していて、他の個人向け通知に使い回せない
+ * ので個別 DM に変えた。通数も個別のほうが安い（群組 push は受信人数ぶん
+ * カウントされる）。
+ *
+ * opts:
+ *   dryRun … 送らずに「誰に何が飛ぶか」だけ返す
+ *   names  … 指定した姓名だけに送る（管理頁のテスト送信用。全員に迷惑を
+ *            かけずに 1〜2 人で試せるようにするため）
+ *
+ * ⚠ 友だち追加していない相手への push は、LINE が 200 を返すのに実際には
+ * 届かない。友だちかどうかを調べる API も無いので、ここでの「送った」は
+ * 「LINE が受け取った」までしか保証しない。
  */
-function runReminder_(dryRun) {
+function runReminder_(opts) {
+  const o = opts || {};
+  const dryRun = !!o.dryRun;
+  const only = (o.names && o.names.length) ? o.names : null;
+
   const dates = nextWeekDates_();
   const result = collectUnsubmitted_(dates);
-  const built = buildReminderMessage_(result);
+  const userIds = lineUserIdMap_();
+
+  const remindable = {};
+  result.targets.forEach(function (p) { remindable[p.name] = !!userIds[p.name]; });
 
   const out = {
     ok: true,
     dates: dates,
     count: result.targets.length,
     total: result.everyone.length,
-    mentioned: built.mentioned,
     missingSheets: result.missingSheets,
     targets: result.targets.map(function (p) {
-      return { name: p.name, role: p.role, missing: p.missing };
+      return { name: p.name, role: p.role, missing: p.missing, remindable: !!remindable[p.name] };
     }),
-    preview: built.previewText,
+    preview: buildReminderPreview_(result, remindable),
   };
 
   if (!result.checkedDays) {
@@ -1025,34 +1028,54 @@ function runReminder_(dryRun) {
     out.skipped = 'all_submitted';
     return out;
   }
+
+  // 送る相手を絞り込む
+  const queue = result.targets.filter(function (p) {
+    if (only && only.indexOf(p.name) === -1) return false;
+    return true;
+  });
+
+  out.sentTo = [];
+  out.skippedNoLine = [];
+  out.failed = [];
+
   if (dryRun) {
     out.dryRun = true;
+    queue.forEach(function (p) {
+      (remindable[p.name] ? out.sentTo : out.skippedNoLine).push(p.name);
+    });
+    out.sampleText = queue.length ? buildDmText_(queue[0], dates) : '';
     return out;
   }
 
-  let sent = linePush_(built.messages);
-
-  // グループを抜けた人の userId が残っていると、@提及 のせいで
-  // メッセージごと 400 で弾かれる。催促自体は届けたいので名前だけで再送する。
-  if (!sent.ok && sent.error === 'line_api_400' && built.mentioned) {
-    const retry = linePush_(built.fallback);
-    if (retry.ok) {
-      out.mentionFailed = true;
-      out.mentioned = 0;
-      sent = retry;
+  queue.forEach(function (p) {
+    const uid = userIds[p.name];
+    if (!uid) {
+      // LIFF を一度も開いていない人。管理頁で「無法提醒」と出すので、
+      // 店長が口頭なり群組なりで別途伝えられる。
+      out.skippedNoLine.push(p.name);
+      return;
     }
-  }
+    const res = lineApi_(LINE_PUSH_URL, {
+      to: uid,
+      messages: [{ type: 'text', text: buildDmText_(p, dates) }],
+    });
+    if (res.ok) out.sentTo.push(p.name);
+    else out.failed.push({ name: p.name, error: res.error, detail: res.detail });
+  });
 
-  if (!sent.ok) {
+  if (out.failed.length && !out.sentTo.length) {
     out.ok = false;
-    out.error = sent.error;
-    out.detail = sent.detail;
+    out.error = out.failed[0].error;
+    out.detail = out.failed[0].detail;
     return out;
   }
-  out.sent = true;
-  props_().setProperty('REMIND_LAST_SENT', new Date().toISOString());
+
+  out.sent = out.sentTo.length;
+  if (!only) props_().setProperty('REMIND_LAST_SENT', new Date().toISOString());
   return out;
 }
+
 
 /** 時間驅動觸發器的進入點（這個函式名被 applyReminderTrigger_ 寫死） */
 function remindUnsubmitted() {
@@ -1060,21 +1083,21 @@ function remindUnsubmitted() {
     console.log('リマインドは無効（REMIND_ENABLED != 1）なので何もしません');
     return;
   }
-  const out = runReminder_(false);
+  const out = runReminder_({});
   console.log(JSON.stringify(out));
   if (!out.ok) throw new Error('LINE リマインド失敗: ' + out.error + ' ' + (out.detail || ''));
 }
 
 /** 手動確認用：送らずに本文だけログに出す */
 function previewReminder() {
-  const out = runReminder_(true);
+  const out = runReminder_({ dryRun: true });
   console.log(out.preview || JSON.stringify(out));
   return out;
 }
 
 /** 手動確認用：今すぐ本番送信する */
 function sendReminderNow() {
-  const out = runReminder_(false);
+  const out = runReminder_({});
   console.log(JSON.stringify(out));
   return out;
 }
@@ -1094,6 +1117,8 @@ function setupLineReminder() {
     LINE_TARGET_ID: LINE_UNSET,
     LINE_WEBHOOK_KEY: Utilities.getUuid().replace(/-/g, ''),
     APP_URL: 'PASTE_YOUR_FRONTEND_URL',
+    // 催促DMから排班フォームを直接開くため（frontend/js/config.js の LIFF_ID と同じ値）
+    LIFF_ID: 'PASTE_YOUR_LIFF_ID',
     REMIND_ENABLED: '0',
     REMIND_WEEKDAY: String(REMIND_DEFAULT_WEEKDAY),
     REMIND_HOUR: String(REMIND_DEFAULT_HOUR),
@@ -1278,7 +1303,7 @@ function lineDisplayName_(groupId, userId) {
 function handleGetReminderConfig_(who) {
   if (!who.isAdmin) return jsonOut_({ ok: false, error: 'admin_only' });
 
-  const preview = runReminder_(true);
+  const preview = runReminder_({ dryRun: true });
   const linked = lineUserIdMap_();
 
   let webhookUrl = '';
@@ -1309,8 +1334,9 @@ function handleGetReminderConfig_(who) {
       pending: Object.keys(readSubmitPending_()).length,
     },
     // userId そのものは返さない（管理頁に出す必要がない）
-    mentionable: (preview.targets || []).map(function (t) {
-      return { name: t.name, mentionable: !!linked[t.name] };
+    // 「@できるか」ではなく「個人DMを送れるか」に意味が変わった
+    remindable: (preview.targets || []).map(function (t) {
+      return { name: t.name, remindable: !!linked[t.name] };
     }),
     preview: preview,
   });
@@ -1326,8 +1352,9 @@ function handleSetReminderConfig_(who, body) {
   if (!(hour >= 0 && hour <= 23)) return jsonOut_({ ok: false, error: 'bad_hour' });
 
   const enabled = !!body.enabled;
+  // 個別 DM になったので群組は必須ではない（群組は「綁定」コマンド用に残る）。
+  // 必要なのはトークンだけ。
   if (enabled && !isSet_(lineToken_())) return jsonOut_({ ok: false, error: 'line_token_missing' });
-  if (enabled && !isSet_(lineTargetId_())) return jsonOut_({ ok: false, error: 'line_target_missing' });
 
   return jsonOut_({ ok: true, config: saveReminderConfig_({
     enabled: enabled, weekday: weekday, hour: hour,
@@ -1337,7 +1364,8 @@ function handleSetReminderConfig_(who, body) {
 /** POST { action:'sendReminderTest', dryRun }（管理員限定） */
 function handleSendReminderTest_(who, body) {
   if (!who.isAdmin) return jsonOut_({ ok: false, error: 'admin_only' });
-  return jsonOut_(runReminder_(!!body.dryRun));
+  // 試送は全員に迷惑をかけないよう、names で 1〜2 人に絞れる
+  return jsonOut_(runReminder_({ dryRun: !!body.dryRun, names: body.names || null }));
 }
 
 /* ============================================================

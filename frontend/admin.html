@@ -121,20 +121,10 @@
       </div>
     </div>
 
-    <!-- 員工 / Email 對照 -->
-    <div class="section">
-      <div class="section-title"><span class="num">03</span><h2>員工帳號綁定狀態</h2><span class="sub" id="rosterSheetLabel"></span></div>
-      <div class="roster-list" id="rosterList"></div>
-      <div class="note">
-        Email 是員工第一次 Google 登入時自動寫入試算表 C 欄的。
-        顯示「尚未綁定」代表這位員工還沒登入過；你也可以直接在試算表 C 欄手動預填。
-      </div>
-    </div>
-
     <!-- LINE 催繳提醒 -->
     <div class="section" style="margin-bottom:28px;">
       <div class="section-title">
-        <span class="num">04</span><h2>LINE 催繳提醒</h2>
+        <span class="num">03</span><h2>LINE 催繳提醒</h2>
         <span class="sub" id="remindStatus">讀取中…</span>
       </div>
 
@@ -174,7 +164,7 @@
     <!-- 提交通知 -->
     <div class="section" style="margin-bottom:28px;">
       <div class="section-title">
-        <span class="num">05</span><h2>提交通知</h2>
+        <span class="num">04</span><h2>提交通知</h2>
         <span class="sub" id="notifyStatus">讀取中…</span>
       </div>
 
@@ -199,6 +189,27 @@
         沒加好友的話 LINE 不會報錯，只是訊息默默不會出現，
         所以連結完請務必按一次「發送測試通知」確認。
       </div>
+    </div>
+
+    <!-- 員工 / Email 對照
+         平常用不到（Email 只是系統反查身分用的），所以收在最後面，
+         而且預設折疊。要看的時候才點開。 -->
+    <div class="section" style="margin-bottom:28px;">
+      <details class="fold">
+        <summary class="fold-summary">
+          <span class="num">05</span>
+          <span class="fold-title">員工帳號綁定狀態</span>
+          <span class="fold-sub" id="rosterSheetLabel"></span>
+        </summary>
+        <div class="fold-body">
+          <div class="roster-list" id="rosterList"></div>
+          <div class="note">
+            Email 是員工第一次 Google 登入時自動寫入試算表 C 欄的（該欄在試算表上
+            預設隱藏）。顯示「尚未綁定」代表這位員工還沒用 Google 登入過 ——
+            從 LINE 進來的員工不需要 Email，所以這裡空著是正常的。
+          </div>
+        </div>
+      </details>
     </div>
   </div>
 </div>

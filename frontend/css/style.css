@@ -595,3 +595,32 @@
   .copy-week-hint{
     font-size:10.5px; line-height:1.6; color:var(--ink-soft); margin:0 0 10px;
   }
+
+  /* ---------- 管理頁：折りたたみセクション（普段は見ない情報を畳む） ---------- */
+  .fold{
+    background:var(--paper-2); border:1.5px solid var(--line-paper);
+    border-radius:10px; overflow:hidden;
+  }
+  .fold-summary{
+    display:flex; align-items:baseline; gap:8px;
+    padding:12px 14px; cursor:pointer; list-style:none;
+    font-family:'Noto Sans TC', sans-serif;
+  }
+  /* 既定の三角を消して、自前の ▸ を右端に置く */
+  .fold-summary::-webkit-details-marker{ display:none; }
+  .fold-summary::marker{ content:''; }
+  .fold-summary::after{
+    content:'▸'; margin-left:auto; color:var(--chili);
+    font-size:13px; transition:transform .15s ease;
+  }
+  .fold[open] .fold-summary::after{ transform:rotate(90deg); }
+  .fold-summary .num{
+    font-family:'DotGothic16', monospace; color:var(--chili); font-size:13px;
+  }
+  .fold-title{ font-family:'Noto Serif TC', serif; font-size:15px; color:var(--ink); }
+  .fold-sub{ font-size:10.5px; color:var(--ink-soft); }
+  .fold-body{
+    padding:0 14px 14px; border-top:1.4px dashed var(--line-paper);
+    margin-top:-1px; padding-top:12px;
+  }
+  .fold-body .note{ margin-top:10px; }

@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-23 dm-reminder';
+const CODE_VERSION = '2026-09-24 bootstrap';
 
 /* ============================================================
  * Script Properties
@@ -1918,6 +1918,7 @@ function linkLineAccount_(who, body) {
 
 /**
  * GET /exec?action=ping
+ * GET /exec?action=bootstrap&dates=...&id_token=...&token=...  ← 員工頁の初回はこれ 1 本
  * GET /exec?action=whoami&id_token=...&token=...
  * GET /exec?action=getWeek&dates=2026-08-31,...&id_token=...&token=...
  * GET /exec?action=getMonthHours&id_token=...&token=...[&nextWeekDates=...]
@@ -1954,6 +1955,7 @@ function doGet(e) {
     const who = resolveIdentity_(p.id_token, p.auth);
     if (!who.ok) return jsonOut_({ ok: false, error: who.error });
 
+    if (action === 'bootstrap') return handleBootstrap_(who, p);
     if (action === 'whoami') return handleWhoami_(who);
     if (action === 'getWeek') return handleGetWeek_(who, p);
     if (action === 'getMonthHours') return handleGetMonthHours_(who, p);
@@ -1967,7 +1969,43 @@ function doGet(e) {
   }
 }
 
+/**
+ * GET ?action=bootstrap&dates=...
+ *
+ * 員工頁を開いたときに要る 3 つ（身分 / 週の班表 / 今月の累計）を 1 回で返す。
+ *
+ * なぜまとめるか：`/exec` は 1 往復あたり 1〜2 秒かかる（リダイレクトを
+ * 挟むプラットフォームの都合で、処理内容とは関係なく発生する）。
+ * 以前は whoami → getWeek → getMonthHours と 3 回叩いていたので、
+ * 待ち時間のほとんどが往復そのものだった。
+ * ID Token の検証も名簿の読み取りも 1 回で済むぶん、後端側も軽くなる。
+ *
+ * 管理頁は別の組み立て（adminWeek_）を使うので、ここでは員工ぶんだけ返す。
+ */
+function handleBootstrap_(who, p) {
+  const out = { ok: true, who: whoamiData_(who) };
+
+  // 未綁定・純管理員は班表を持たない。身分だけ返して前端に判断させる。
+  if (who.role !== 'employee') return jsonOut_(out);
+
+  const dates = String(p.dates || '')
+    .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (dates.length) out.week = employeeWeekData_(who, dates);
+
+  out.month = monthHoursData_(who, {});
+  return jsonOut_(out);
+}
+
 function handleWhoami_(who) {
+  return jsonOut_(whoamiData_(who));
+}
+
+/**
+ * whoami の中身だけを組み立てる（JSON で包まない）。
+ * bootstrap が同じ内容を 1 つの応答に同梱できるようにするため、
+ * 「データを作る」と「返す」を分けてある。
+ */
+function whoamiData_(who) {
   const out = {
     ok: true,
     role: who.role,
@@ -1986,7 +2024,7 @@ function handleWhoami_(who) {
     out.canOpenAdmin = !!who.canOpenAdmin;
   }
   if (who.role === 'unregistered') out.unboundRoster = who.unboundRoster || [];
-  return jsonOut_(out);
+  return out;
 }
 
 /**
@@ -2056,6 +2094,11 @@ function sheetUrl_(sheet) {
 }
 
 function employeeWeek_(who, dates) {
+  return jsonOut_(employeeWeekData_(who, dates));
+}
+
+/** employeeWeek_ の中身（bootstrap から同梱するために分けてある） */
+function employeeWeekData_(who, dates) {
   const mine = {};
   const overlaps = {};
   const errors = {};
@@ -2095,14 +2138,14 @@ function employeeWeek_(who, dates) {
     if (matches.length) overlaps[dateStr] = matches;
   });
 
-  return jsonOut_({
+  return {
     ok: true,
     role: 'employee',
     me: { name: who.name, role: who.roleTitle || '' },
     mine: mine,
     overlaps: overlaps,
     errors: errors,
-  });
+  };
 }
 
 /**
@@ -2111,7 +2154,11 @@ function employeeWeek_(who, dates) {
  */
 function handleGetMonthHours_(who, p) {
   if (who.role !== 'employee') return jsonOut_({ ok: false, error: 'employee_only' });
+  return jsonOut_(monthHoursData_(who, p));
+}
 
+/** handleGetMonthHours_ の中身（bootstrap から同梱するために分けてある） */
+function monthHoursData_(who, p) {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
@@ -2155,7 +2202,7 @@ function handleGetMonthHours_(who, p) {
   if (p.nextWeekDates) {
     out.nextWeek = weekSubtotal_(who, p.nextWeekDates.split(','));
   }
-  return jsonOut_(out);
+  return out;
 }
 
 /** 指定日期清單的時數小計（跨月份分頁也能加總） */

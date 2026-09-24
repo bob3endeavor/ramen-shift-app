@@ -28,6 +28,7 @@
     signingIn: false,  // 登入流程進行中（避免重複觸發）
     isAdmin: false,    // 管理員兼員工（店長）のとき true
     canOpenAdmin: false,  // LIFF 版で管理頁への導線を出すか（権限ではない）
+    preload: null,     // bootstrap で 1 回にまとめて届いた週/月のデータ
   };
 
   /* ---------------- date helpers ---------------- */
@@ -244,9 +245,35 @@
     }
   }
 
+  /**
+   * 開いたときに要るもの（身分 / 週の班表 / 今月の累計）を 1 回でもらう。
+   *
+   * `/exec` は 1 往復 1〜2 秒かかる（リダイレクトを挟むプラットフォームの都合。
+   * 処理内容とは関係なく発生する）。以前は 3 回叩いていたので、待ち時間の
+   * ほとんどが往復そのものだった。
+   *
+   * 前端は push した瞬間に本番へ出るが、後端は手で貼り直すまで古いままなので、
+   * bootstrap を知らない後端に当たったら従来の whoami に落とす。
+   */
+  async function fetchBootstrap() {
+    const res = await Auth.get('bootstrap', { dates: state.days.map(ymd).join(',') });
+    if (res.ok) {
+      Auth.setProfile(res.who);
+      return res;
+    }
+    if (res.error === 'unknown action') {
+      return { ok: true, who: await Auth.whoami(), legacy: true };
+    }
+    // 憑證切れなどは whoami でも同じように失敗する。そのまま扱わせる。
+    return { ok: false, who: res };
+  }
+
   async function routeByProfile() {
     showBanner('ok', '登入成功，讀取資料中…');
-    const who = await Auth.whoami();
+    const boot = await fetchBootstrap();
+    const who = boot.who;
+    // 1 回で届いたぶんは enterApp で再取得しない
+    state.preload = boot.legacy ? null : { week: boot.week, month: boot.month };
     setAuthBusy(false);
     if (!who.ok) {
       // LIFF 版には戻る先のログイン画面が無いので、バナーで再試行させる
@@ -360,14 +387,20 @@
       $('bindError').textContent = Auth.describeError(res.error);
       return;
     }
-    state.me = { name: res.name, role: res.roleTitle || '', email: Auth.profile.email };
+    state.me = {
+      name: res.name,
+      role: res.roleTitle || '',
+      email: (Auth.profile && Auth.profile.email) || '',
+    };
 
-    // 綁定直後は whoami の結果が「未綁定」のままなので、LINE 連携の状態だけ
-    // 取り直す（失敗しても本題ではないので握りつぶす）
-    const who = await Auth.whoami();
-    if (who.ok) {
-      state.lineLoginReady = !!who.lineLoginReady;
-      state.lineLinked = !!who.lineLinked;
+    // 綁定直後の身分は「未綁定」のままなので取り直す。ついでに班表も
+    // 同じ 1 回で受け取って、続く enterApp での往復を省く。
+    const boot = await fetchBootstrap();
+    if (boot.ok && boot.who.ok) {
+      state.lineLoginReady = !!boot.who.lineLoginReady;
+      state.lineLinked = !!boot.who.lineLinked;
+      state.canOpenAdmin = !!boot.who.canOpenAdmin;
+      state.preload = boot.legacy ? null : { week: boot.week, month: boot.month };
     }
 
     await enterApp();
@@ -407,8 +440,18 @@
     // 先把骨架畫出來再去要資料。Apps Script 冷啟動要好幾秒，
     // 等資料回來才第一次 render 的話，那幾秒畫面幾乎是空白的。
     renderAll();
-    showBanner('ok', '讀取班表中…');
 
+    // bootstrap で既に届いているなら、ここでの往復は要らない
+    const pre = state.preload;
+    state.preload = null;
+    if (pre && pre.week) {
+      applyWeek(pre.week);
+      renderAll();
+      if (pre.month && pre.month.ok) applyMonth(pre.month);
+      return;
+    }
+
+    showBanner('ok', '讀取班表中…');
     await loadWeek();
     renderAll();
     loadMonthHours();
@@ -597,6 +640,14 @@
       return;
     }
 
+    applyWeek(res);
+  }
+
+  /**
+   * getWeek の応答を state に写す。
+   * bootstrap で先に届いた同じ形のデータも、ここを通して同じように扱う。
+   */
+  function applyWeek(res) {
     state.overlaps = res.overlaps || {};
     state.weekErrors = res.errors || {};
     state.requests = {};
@@ -689,6 +740,11 @@
       $('monthHoursSub').textContent = Auth.describeError(res.error);
       return;
     }
+    applyMonth(res);
+  }
+
+  /** getMonthHours の応答を state に写す（bootstrap ぶんも同じ形） */
+  function applyMonth(res) {
     state.month = res;
     renderHours();
   }

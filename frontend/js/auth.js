@@ -256,6 +256,12 @@ const Auth = (function () {
     return json;
   }
 
+  /**
+   * bootstrap のように whoami を単独で叩かずに身分が判った場合、
+   * 同じ場所に入れておく（前端の他の箇所が Auth.profile を見ているため）。
+   */
+  function setProfile(p) { state.profile = p; }
+
   /** 登入後向後端確認身分，結果存在 Auth.profile */
   async function whoami() {
     const res = await get('whoami');
@@ -281,6 +287,7 @@ const Auth = (function () {
     get authKind() { return state.authKind; },
     set onAuthLost(fn) { state.onAuthLost = fn; },
     useLineToken: useLineToken,
+    setProfile: setProfile,
     signIn: signIn,
     signOut: signOut,
     whoami: whoami,

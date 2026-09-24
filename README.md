@@ -88,6 +88,7 @@ ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁�
 | 方法 | action | 誰可以用 | 回傳 |
 | --- | --- | --- | --- |
 | GET | `ping` | 任何人 | 健康檢查。回傳 `version`，可用來確認貼上的 Code.gs 真的部署了 |
+| GET | `bootstrap` | 員工本人 | **員工頁開啟時只叫這一支**。身分、下週班表、本月累計一次回傳 |
 | GET | `whoami` | 登入者 | `{role:'admin'\|'employee'\|'unregistered', name, email, unboundRoster}` |
 | GET | `getWeek` | 員工／管理員 | 員工：自己那一列 + 與自己重疊的同事（姓名＋時段）<br>管理員：全員完整班表 |
 | GET | `getMonthHours` | 員工本人 | 本月至今累計時數（排休不計），可選帶 `nextWeekDates` 一併算小計 |
@@ -197,10 +198,13 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
 ## 資料流程摘要
 
 1. 員工從 LINE 的選單開啟 → LIFF 自動取得 LINE ID Token →
-   `GET ?action=whoami&auth=line` 決定要顯示「首次選姓名」還是直接進班表。
+   `GET ?action=bootstrap&auth=line&dates=...` **一次**拿到身分、下週班表、
+   本月累計。
    （管理員走 `index.html` 的 Google 登入 → `admin.html`）
-2. 員工主畫面載入時呼叫 `GET ?action=getWeek&dates=...`，拿到自己下週
-   七天的班表，以及「跟自己重疊的同事」清單（不會拿到其他人的完整班表）。
+2. 為什麼要併成一支：`/exec` 一個來回就要 1〜2 秒，這是平台轉址的成本，
+   跟後端做多少事無關。以前分成 `whoami` → `getWeek` → `getMonthHours`
+   三次，等待時間幾乎都花在來回本身。班表只回自己那一列 + 與自己重疊的
+   同事，不會拿到其他人的完整班表。
 3. 選日期、班別後按「確認設定」，`POST` 立刻寫入試算表對應儲存格
    （依日期自動判斷月份分頁），寫完在背景重新取得重疊資訊。
 4. 「排休」寫入 `排休\nday off`，正常班別寫入 `開始時間\n結束時間`，

@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-24 bootstrap';
+const CODE_VERSION = '2026-09-24 save-overlaps';
 
 /* ============================================================
  * Script Properties
@@ -2098,44 +2098,59 @@ function employeeWeek_(who, dates) {
 }
 
 /** employeeWeek_ の中身（bootstrap から同梱するために分けてある） */
+/**
+ * ある 1 日について「自分の班別」と「自分と重なる同僚」を出す。
+ *
+ * 重なりは日ごとに独立しているので、1 日だけ書き換えたときは
+ * その日だけ計算し直せば足りる（submitShift がそのために使う）。
+ * 列を 1 本読むだけなので、週ぜんぶを読み直すより軽い。
+ *
+ * 見つからない日は null。
+ */
+function dayOverlapData_(who, dateStr) {
+  const loc = locateDate_(dateStr);
+  if (!loc) return null;
+
+  const roster = getRoster_(loc.sheet);
+  if (!roster.length) return { mine: '', matches: [] };
+
+  const colValues = loc.sheet
+    .getRange(STAFF_START_ROW, loc.col, roster.length, 1)
+    .getDisplayValues();
+
+  let meIndex = -1;
+  for (let i = 0; i < roster.length; i++) {
+    if (roster[i].name === who.name) { meIndex = i; break; }
+  }
+  const myRaw = meIndex === -1 ? '' : (colValues[meIndex][0] || '');
+
+  const myShift = parseShiftCell_(myRaw);
+  if (!myShift || myShift.off) return { mine: myRaw, matches: [] };
+
+  // 只回傳「與我重疊」的同事姓名與時段，不回傳其他人的完整班表
+  const myRange = [toMin_(myShift.start), toMin_(myShift.end)];
+  const matches = [];
+  roster.forEach(function (person, i) {
+    if (person.name === who.name) return;
+    const shift = parseShiftCell_(colValues[i][0]);
+    if (!shift || shift.off) return;
+    if (rangesOverlap_(myRange, [toMin_(shift.start), toMin_(shift.end)])) {
+      matches.push({ name: person.name, role: person.role, text: shift.text });
+    }
+  });
+  return { mine: myRaw, matches: matches };
+}
+
 function employeeWeekData_(who, dates) {
   const mine = {};
   const overlaps = {};
   const errors = {};
 
   dates.forEach(function (dateStr) {
-    const loc = locateDate_(dateStr);
-    if (!loc) { errors[dateStr] = 'sheet_or_date_not_found'; mine[dateStr] = ''; return; }
-
-    const roster = getRoster_(loc.sheet);
-    if (!roster.length) { mine[dateStr] = ''; return; }
-
-    const colValues = loc.sheet
-      .getRange(STAFF_START_ROW, loc.col, roster.length, 1)
-      .getDisplayValues();
-
-    let meIndex = -1;
-    for (let i = 0; i < roster.length; i++) {
-      if (roster[i].name === who.name) { meIndex = i; break; }
-    }
-    const myRaw = meIndex === -1 ? '' : (colValues[meIndex][0] || '');
-    mine[dateStr] = myRaw;
-
-    const myShift = parseShiftCell_(myRaw);
-    if (!myShift || myShift.off) return;
-
-    // 只回傳「與我重疊」的同事姓名與時段，不回傳其他人的完整班表
-    const myRange = [toMin_(myShift.start), toMin_(myShift.end)];
-    const matches = [];
-    roster.forEach(function (person, i) {
-      if (person.name === who.name) return;
-      const shift = parseShiftCell_(colValues[i][0]);
-      if (!shift || shift.off) return;
-      if (rangesOverlap_(myRange, [toMin_(shift.start), toMin_(shift.end)])) {
-        matches.push({ name: person.name, role: person.role, text: shift.text });
-      }
-    });
-    if (matches.length) overlaps[dateStr] = matches;
+    const day = dayOverlapData_(who, dateStr);
+    if (!day) { errors[dateStr] = 'sheet_or_date_not_found'; mine[dateStr] = ''; return; }
+    mine[dateStr] = day.mine;
+    if (day.matches.length) overlaps[dateStr] = day.matches;
   });
 
   return {
@@ -2556,5 +2571,15 @@ function handleSubmitShift_(who, body) {
   // 何日分いじったかだけ数えておく（notifySubmit が取り出して送る）。
   bumpSubmitPending_(who.name);
 
-  return jsonOut_({ ok: true, name: who.name });
+  // 書き換えた日の「重なる同僚」を一緒に返す。
+  // これが無いと前端が保存のたびに getWeek を叩き直すことになり、
+  // 1 回 1〜2 秒の往復がもう 1 つ増える。重なりは日ごとに独立なので、
+  // 変えた日だけ計算すれば足りる。
+  const day = dayOverlapData_(who, body.date);
+  return jsonOut_({
+    ok: true,
+    name: who.name,
+    date: body.date,
+    overlaps: day ? day.matches : [],
+  });
 }

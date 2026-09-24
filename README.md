@@ -96,7 +96,7 @@ ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁�
 | GET | `getReminderConfig` | 僅管理員 | LINE 催繳提醒的設定、LINE 連線狀態、目前未提出名單 |
 | GET | `startLineLink` | 員工本人 | 產生帶簽章 `state` 的 LINE Login 授權網址 |
 | POST | `linkAccount` | 未綁定者 | 首次登入把 `(姓名, Email)` 寫入 C 欄 |
-| POST | `submitShift` | 員工本人 | 寫入班表；姓名由 ID Token 反查，不看前端傳的值 |
+| POST | `submitShift` | 員工本人 | 寫入班表；姓名由 ID Token 反查，不看前端傳的值。**順便回傳那天的重疊同事**，前端就不用再叫一次 `getWeek` |
 | POST | `unlinkLine` | 員工本人 | 解除自己的 LINE 連結 |
 | POST | `notifySubmit` | 員工本人 | 送出班表時通知店主（沒有變更就不送）|
 | POST | `setReminderConfig` | 僅管理員 | 改提醒的開關／星期／時段，並重建時間驅動觸發器 |
@@ -206,7 +206,8 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
    三次，等待時間幾乎都花在來回本身。班表只回自己那一列 + 與自己重疊的
    同事，不會拿到其他人的完整班表。
 3. 選日期、班別後按「確認設定」，`POST` 立刻寫入試算表對應儲存格
-   （依日期自動判斷月份分頁），寫完在背景重新取得重疊資訊。
+   （依日期自動判斷月份分頁）。**回應裡就附上那天的重疊同事**，所以不用
+   再叫一次 `getWeek`——重疊是逐日獨立的，只有改到的那天會變。
 4. 「排休」寫入 `排休\nday off`，正常班別寫入 `開始時間\n結束時間`，
    格式與店長現有試算表完全一致。
 5. 「工時試算」的本月累計來自 `getMonthHours`（只算到今天為止，排休不計）；

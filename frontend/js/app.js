@@ -600,9 +600,11 @@
     setCopyBusy(true, '套用中…');
     state.saving = true;
     let done = 0;
+    let needRefresh = false;   // 1 日でも overlaps が返らなければ最後にまとめて取り直す
     for (let i = 0; i < plan.length; i++) {
       const p = plan[i];
       const result = await saveToServer(copyPayload(p.key, p.entry));
+      if (result.ok && !applyDayOverlaps(p.key, result)) needRefresh = true;
       if (!result.ok) {
         state.saving = false;
         setCopyBusy(false);
@@ -621,7 +623,8 @@
     state.saving = false;
     setCopyBusy(false);
     renderAll();
-    refreshOverlaps();
+    // 保存のたびに重なりが返ってきていれば、取り直しは要らない
+    if (needRefresh) refreshOverlaps();
     showBanner('ok', '已套用上週的 ' + done + ' 天，確認後請按「送出班表」');
     setTimeout(hideBanner, 3200);
   });
@@ -701,6 +704,21 @@
   }
 
   /** 存檔後在背景重新整理，讓重疊資訊跟著更新 */
+  /**
+   * 保存の応答に相乗りしてきた「その日の重なる同僚」を反映する。
+   *
+   * 重なりは日ごとに独立なので、変えた日だけ差し替えれば足りる。
+   * これで保存のたびの getWeek（もう 1 往復＝1〜2 秒）が要らなくなる。
+   * 応答に overlaps が無い＝後端がまだ古いので、false を返して
+   * 従来どおり refreshOverlaps() に任せる。
+   */
+  function applyDayOverlaps(key, result) {
+    if (!result || !Object.prototype.hasOwnProperty.call(result, 'overlaps')) return false;
+    if (result.overlaps && result.overlaps.length) state.overlaps[key] = result.overlaps;
+    else delete state.overlaps[key];
+    return true;
+  }
+
   async function refreshOverlaps() {
     if (isDemoMode) { recomputeDemoOverlaps(); renderAll(); return; }
     const res = await Auth.get('getWeek', { dates: state.days.map(ymd).join(',') });
@@ -920,7 +938,9 @@
 
     delete state.requests[key];
     if (isDemoMode && state.demoWeek[key]) state.demoWeek[key][state.me.name] = '';
-    closeSheet(); renderAll(); refreshOverlaps();
+    closeSheet();
+    if (applyDayOverlaps(key, result)) renderAll();
+    else { renderAll(); refreshOverlaps(); }
   };
 
   okBtn.onclick = async function () {
@@ -948,7 +968,9 @@
       if (!state.demoWeek[key]) state.demoWeek[key] = {};
       state.demoWeek[key][state.me.name] = entry.off ? '排休\nday off' : entry.raw.replace('-', '\n');
     }
-    closeSheet(); renderAll(); refreshOverlaps();
+    closeSheet();
+    if (applyDayOverlaps(key, result)) renderAll();
+    else { renderAll(); refreshOverlaps(); }
   };
 
   /* ---------------- 預覽矩陣（自己 + 重疊同事） ---------------- */
@@ -1013,9 +1035,15 @@
     });
     if (!hasAnyShift) { box.innerHTML = ''; return; }
 
+    // 自分がその日に入っていなければ「重なる」も何もない。
+    // 消した直後は重疊データだけ残ることがあるので、両方揃った日だけ出す
+    // （requests を見ずに書くと、その日を削除した瞬間に落ちる）。
     const withOverlap = state.days
       .map(function (d, i) { return { d: d, i: i }; })
-      .filter(function (x) { return state.overlaps[ymd(x.d)]; });
+      .filter(function (x) {
+        const k = ymd(x.d);
+        return state.overlaps[k] && state.requests[k];
+      });
 
     let html = `<p class="ov-title">👥 與你時段重疊的同事</p>`;
     if (!withOverlap.length) {

@@ -112,6 +112,10 @@
   }
   .day-card:active{ transform:scale(0.94); }
   .day-card .dow{ font-size:10px; color:var(--ink-soft); font-weight:700; }
+  .day-card .mnum{
+    font-family:'DotGothic16', monospace; font-size:8px; font-weight:700;
+    color:var(--chili-dark); line-height:1; min-height:8px;
+  }
   .day-card .dnum{ font-size:16px; font-weight:900; }
   .day-card .mark{
     font-family:'DotGothic16', monospace; font-size:7.4px; line-height:1.1; color:var(--ink-soft);
@@ -319,7 +323,17 @@
   .day-card.unavailable{ opacity:.45; }
 
   /* ---------- 工時試算 ---------- */
-  .hours-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .hours-toggle{
+    display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0 0 8px;
+  }
+  .hours-toggle-btn{
+    background:var(--paper-2); color:var(--ink-soft); border:1.4px solid var(--line-paper);
+    border-radius:8px; padding:8px 10px; font-family:'Noto Sans TC', sans-serif;
+    font-weight:700; font-size:12.5px; cursor:pointer; transition:background .12s ease, color .12s ease;
+  }
+  .hours-toggle-btn.is-active{ background:var(--ink); border-color:var(--ink); color:var(--yuzu); }
+  .hours-toggle-btn:active{ transform:scale(.97); }
+  .hours-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
   .hours-card{
     background:var(--paper-2); border:1.5px solid var(--line-paper); border-radius:11px;
     padding:13px 13px 11px; display:flex; flex-direction:column; gap:3px;

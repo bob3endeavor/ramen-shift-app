@@ -138,13 +138,17 @@ window.APP_AUTH_MODE = 'liff';
     <!-- STEP 3: 工時試算 -->
     <div class="section" style="margin-bottom:20px;">
       <div class="section-title"><span class="num">03</span><h2>工時試算</h2><span class="sub" id="hoursMonthLabel"></span></div>
+      <div class="hours-toggle" id="hoursToggle">
+        <button type="button" class="hours-toggle-btn is-active" id="hoursTabMonth">本月</button>
+        <button type="button" class="hours-toggle-btn" id="hoursTabWeek">下週</button>
+      </div>
       <div class="hours-grid">
-        <div class="hours-card primary">
+        <div class="hours-card primary" id="monthHoursCard">
           <span class="h-label">本月累計已上</span>
           <span class="h-value"><b id="monthHours">—</b><span class="h-unit">小時</span></span>
           <span class="h-sub" id="monthHoursSub">讀取中…</span>
         </div>
-        <div class="hours-card">
+        <div class="hours-card" id="weekHoursCard" style="display:none;">
           <span class="h-label">下週希望排班</span>
           <span class="h-value"><b id="weekHours">0</b><span class="h-unit">小時</span></span>
           <span class="h-sub" id="weekHoursSub">尚未選擇</span>

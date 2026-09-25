@@ -767,6 +767,18 @@
     renderHours();
   }
 
+  /** 本月／下週の表示切替（値は両方すでに取得済みなので、出し分けるだけ） */
+  function setHoursMode(mode) {
+    $('monthHoursCard').style.display = mode === 'month' ? 'flex' : 'none';
+    $('weekHoursCard').style.display = mode === 'week' ? 'flex' : 'none';
+    $('hoursTabMonth').classList.toggle('is-active', mode === 'month');
+    $('hoursTabWeek').classList.toggle('is-active', mode === 'week');
+    // 見出し右肩の「〇月」は本月の話なので、下週を見ている間は出さない
+    $('hoursMonthLabel').style.display = mode === 'month' ? '' : 'none';
+  }
+  onClick('hoursTabMonth', function () { setHoursMode('month'); });
+  onClick('hoursTabWeek', function () { setHoursMode('week'); });
+
   function renderHours() {
     const wk = weekSubtotal();
     $('weekHours').textContent = wk.hours;
@@ -794,6 +806,7 @@
   const dayStrip = $('dayStrip');
   function renderDayStrip() {
     dayStrip.innerHTML = '';
+    let prevMonth = null;
     state.days.forEach(function (d) {
       const key = ymd(d);
       const card = document.createElement('div');
@@ -808,8 +821,13 @@
       }
       if (state.weekErrors[key]) card.classList.add('unavailable');
 
+      // 週の途中で月が替わる日だけ、日付の上に「〇月」を出す
+      const month = d.getMonth() + 1;
+      const monthText = (prevMonth !== null && month !== prevMonth) ? `${month}月` : '';
+      prevMonth = month;
+
       card.innerHTML =
-        `<span class="dow">${DOW_ZH[w]}</span><span class="dnum">${d.getDate()}</span><span class="mark">${markText}</span>`;
+        `<span class="dow">${DOW_ZH[w]}</span><span class="mnum">${monthText}</span><span class="dnum">${d.getDate()}</span><span class="mark">${markText}</span>`;
       card.onclick = function () {
         if (state.weekErrors[key]) {
           alert('這天所屬的月份分頁還沒建立，請先請店長建立分頁。');

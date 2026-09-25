@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-24 save-overlaps';
+const CODE_VERSION = '2026-09-25 month-picker';
 
 /* ============================================================
  * Script Properties
@@ -223,6 +223,29 @@ function readRoster_(sheet) {
 /** 所有「○月排班班表」分頁 */
 function allMonthSheets_() {
   return ss_().getSheets().filter(function (sh) { return SHEET_NAME_RE.test(sh.getName()); });
+}
+
+/**
+ * 排班分頁から「選べる月」を 'YYYY-MM' の新しい順で作る。
+ * 員工頁の工時試算の月プルダウン用。
+ *
+ * 分頁名は「9月排班班表」と「115/9月排班班表」の 2 通りある
+ * （monthSheet_ が両方を探しに行く）。年が書いていないほうは
+ * 今年のものとして扱う —— 年を省いて運用している店には
+ * 1 年ぶんしか無いという前提で、monthSheet_ の探索順とも揃う。
+ */
+function availableMonths_() {
+  const now = new Date();
+  const seen = {};
+  allMonthSheets_().forEach(function (sh) {
+    const m = String(sh.getName()).match(/^(?:(\d{2,3})\s*\/\s*)?(\d{1,2})\s*月排班班表\s*$/);
+    if (!m) return;
+    const month = Number(m[2]);
+    if (month < 1 || month > 12) return;
+    const year = m[1] ? Number(m[1]) + 1911 : now.getFullYear();
+    seen[year + '-' + pad2_(month)] = true;
+  });
+  return Object.keys(seen).sort().reverse();
 }
 
 /** 員工名單的「主分頁」：優先用本月，否則用第一個有資料的排班分頁 */
@@ -2175,13 +2198,27 @@ function handleGetMonthHours_(who, p) {
 /** handleGetMonthHours_ の中身（bootstrap から同梱するために分けてある） */
 function monthHoursData_(who, p) {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const today = now.getDate();
+  let year = now.getFullYear();
+  let month = now.getMonth() + 1;
+
+  // ?month=YYYY-MM が付いていればその月を集計する（無ければ今月）。
+  // 員工頁の左のプルダウンで過去の月を見るためのもの。
+  const asked = String((p && p.month) || '').match(/^(\d{4})-(\d{1,2})$/);
+  if (asked && Number(asked[2]) >= 1 && Number(asked[2]) <= 12) {
+    year = Number(asked[1]);
+    month = Number(asked[2]);
+  }
+
+  // 今月は「今日まで」。過ぎた月（と先の月）はその月まるごと数える。
+  const isCurrent = (year === now.getFullYear() && month === now.getMonth() + 1);
+  const lastDay = new Date(year, month, 0).getDate();
+  const today = isCurrent ? now.getDate() : lastDay;
 
   const out = {
     ok: true,
     month: year + '-' + pad2_(month),
+    isCurrentMonth: isCurrent,
+    availableMonths: availableMonths_(),
     throughDay: today,
     minutes: 0,
     hours: 0,

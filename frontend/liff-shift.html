@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20260925">
+<link rel="stylesheet" href="css/style.css?v=20260925b">
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
 /* LINE から開いた版だと app.js に伝える。Google 用のゲート画面を持たない
@@ -137,26 +137,24 @@ window.APP_AUTH_MODE = 'liff';
 
     <!-- STEP 3: 工時試算 -->
     <div class="section" style="margin-bottom:20px;">
-      <div class="section-title"><span class="num">03</span><h2>工時試算</h2><span class="sub" id="hoursMonthLabel"></span></div>
-      <div class="hours-toggle" id="hoursToggle">
-        <button type="button" class="hours-toggle-btn is-active" id="hoursTabMonth">本月</button>
-        <button type="button" class="hours-toggle-btn" id="hoursTabWeek">下週</button>
-      </div>
+      <div class="section-title"><span class="num">03</span><h2>工時試算</h2></div>
       <div class="hours-grid">
-        <div class="hours-card primary" id="monthHoursCard">
-          <span class="h-label">本月累計已上</span>
+        <div class="hours-card primary">
+          <span class="h-label">累計已上</span>
+          <select class="h-select" id="monthSelect"></select>
           <span class="h-value"><b id="monthHours">—</b><span class="h-unit">小時</span></span>
           <span class="h-sub" id="monthHoursSub">讀取中…</span>
         </div>
-        <div class="hours-card" id="weekHoursCard" style="display:none;">
-          <span class="h-label">下週希望排班</span>
+        <div class="hours-card">
+          <span class="h-label">希望排班</span>
+          <select class="h-select" id="weekSelect"></select>
           <span class="h-value"><b id="weekHours">0</b><span class="h-unit">小時</span></span>
           <span class="h-sub" id="weekHoursSub">尚未選擇</span>
         </div>
       </div>
       <div class="note">
-        時數依照試算表上「已寫入的班別」計算（排休不計）。本月累計只算到今天為止，
-        若店長還沒建立本月分頁，數字會顯示為 0。
+        時數依照試算表上「已寫入的班別」計算（排休不計）。本月只算到今天為止，
+        已經過去的月份則是整個月。若該月分頁尚未建立，數字會顯示為 0。
       </div>
     </div>
   </div>
@@ -196,9 +194,9 @@ window.APP_AUTH_MODE = 'liff';
 
 <div class="stamp-toast" id="stampToast">已送出</div>
 
-<script src="js/config.js?v=20260925"></script>
-<script src="js/demo-data.js?v=20260925"></script>
-<script src="js/auth.js?v=20260925"></script>
-<script src="js/app.js?v=20260925"></script>
+<script src="js/config.js?v=20260925b"></script>
+<script src="js/demo-data.js?v=20260925b"></script>
+<script src="js/auth.js?v=20260925b"></script>
+<script src="js/app.js?v=20260925b"></script>
 </body>
 </html>

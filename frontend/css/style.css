@@ -323,17 +323,7 @@
   .day-card.unavailable{ opacity:.45; }
 
   /* ---------- 工時試算 ---------- */
-  .hours-toggle{
-    display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0 0 8px;
-  }
-  .hours-toggle-btn{
-    background:var(--paper-2); color:var(--ink-soft); border:1.4px solid var(--line-paper);
-    border-radius:8px; padding:8px 10px; font-family:'Noto Sans TC', sans-serif;
-    font-weight:700; font-size:12.5px; cursor:pointer; transition:background .12s ease, color .12s ease;
-  }
-  .hours-toggle-btn.is-active{ background:var(--ink); border-color:var(--ink); color:var(--yuzu); }
-  .hours-toggle-btn:active{ transform:scale(.97); }
-  .hours-grid{ display:grid; grid-template-columns:1fr; gap:10px; }
+  .hours-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .hours-card{
     background:var(--paper-2); border:1.5px solid var(--line-paper); border-radius:11px;
     padding:13px 13px 11px; display:flex; flex-direction:column; gap:3px;
@@ -350,6 +340,17 @@
   .hours-card.primary .h-unit{ color:#9fb3a6; }
   .hours-card .h-sub{ font-size:10px; color:var(--ink-soft); line-height:1.5; }
   .hours-card.primary .h-sub{ color:#8ba193; }
+  /* 期間を選ぶプルダウン。カードは画面半分ぶんしか幅が無いので、
+     ラベルの下に横いっぱいで敷いて文字を小さめにしてある。 */
+  .hours-card .h-select{
+    width:100%; margin:1px 0 3px; padding:4px 5px; cursor:pointer;
+    font-family:'Noto Sans TC', sans-serif; font-size:11px; font-weight:700;
+    color:var(--ink); background:var(--paper);
+    border:1.3px solid var(--line-paper); border-radius:6px;
+  }
+  .hours-card.primary .h-select{
+    color:var(--paper); background:#3a2e22; border-color:#4d3f30;
+  }
 
   /* ============================================================
    * 管理員頁（admin.html）

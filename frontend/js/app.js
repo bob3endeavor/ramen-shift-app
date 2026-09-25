@@ -22,7 +22,11 @@
     requests: {},    // "YYYY-MM-DD" -> {off, text, raw}  (= server-confirmed state)
     overlaps: {},    // "YYYY-MM-DD" -> [{name, role, text}]
     weekErrors: {},  // "YYYY-MM-DD" -> error code
-    month: null,     // {hours, days, offDays, month, note}
+    month: null,     // {hours, days, offDays, month, note, availableMonths}
+    monthChoice: null,   // 左のプルダウンで見ている月 'YYYY-MM'
+    monthStale: null,    // 後端が月指定に未対応だったとき、頼んだ月
+    weekChoice: 'next',  // 右のプルダウン。'next' かその週の月曜 'YYYY-MM-DD'
+    weekStats: {},       // weekChoice -> {hours, days, offDays}（取得済みの週）
     openDate: null,
     saving: false,
     signingIn: false,  // 登入流程進行中（避免重複觸發）
@@ -109,6 +113,12 @@
   function onClick(id, fn) {
     const el = $(id);
     if (el) el.onclick = fn;
+  }
+
+  /** 要素が無いページでは何もしない onchange 登録 */
+  function onChange(id, fn) {
+    const el = $(id);
+    if (el) el.onchange = fn;
   }
 
   function showOnly(el) {
@@ -437,6 +447,10 @@
 
     showOnly(appMain);
 
+    // 週のプルダウンは日付だけで作れるので、通信を待たずに出しておく
+    fillWeekSelect();
+    fillMonthSelect();
+
     // 先把骨架畫出來再去要資料。Apps Script 冷啟動要好幾秒，
     // 等資料回來才第一次 render 的話，那幾秒畫面幾乎是空白的。
     renderAll();
@@ -741,60 +755,194 @@
     return { hours: Math.round((minutes / 60) * 10) / 10, days: days, offDays: offDays };
   }
 
-  async function loadMonthHours() {
-    if (isDemoMode) {
-      state.month = {
-        hours: Math.round((DEMO_MONTH_MINUTES / 60) * 10) / 10,
-        days: DEMO_MONTH_DAYS,
-        month: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
-        throughDay: today.getDate(),
-      };
-      renderHours();
-      return;
-    }
+  /* ----- 期間を選ぶプルダウン -----
+   * 左（月）と右（週）で取り方が違う。
+   * ・月 … 試算表を月ぶん読まないと出ないので、後端に集計してもらう
+   * ・週 … 既存の getWeek が任意の日付リストを受けるので、それで
+   *        自分の 7 日ぶんを取って前端で足す（後端の変更が要らない）
+   * 下週だけは通信せず state.requests から計算する。編集した結果を
+   * その場で反映したいので、保存済みの値を取り直す意味が無いため。
+   */
 
-    const res = await Auth.get('getMonthHours');
+  function fromYmd(s) {
+    const p = String(s).split('-').map(Number);
+    return new Date(p[0], p[1] - 1, p[2]);
+  }
+
+  /** 月曜の Date から、その週の 7 日ぶんを作る */
+  function weekDaysFrom(monday) {
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }
+
+  /** getWeek の mine から時数を足す（weekSubtotal と同じ数え方） */
+  function subtotalFromMine(mine, days) {
+    let minutes = 0, dayCount = 0, offDays = 0;
+    days.forEach(function (d) {
+      const parsed = parseServerValue((mine || {})[ymd(d)]);
+      if (!parsed) return;
+      if (parsed.off) { offDays++; return; }
+      const range = parseRange(parsed.raw);
+      if (range && range[1] > range[0]) { minutes += range[1] - range[0]; dayCount++; }
+    });
+    return { hours: Math.round((minutes / 60) * 10) / 10, days: dayCount, offDays: offDays };
+  }
+
+  /** 下週・本週＋過去 4 週。key は 'next' かその週の月曜 */
+  function weekOptions() {
+    const opts = [{ key: 'next', monday: state.days[0], label: '下週' }];
+    for (let i = 0; i <= 4; i++) {
+      const mon = new Date(thisMonday);
+      mon.setDate(thisMonday.getDate() - i * 7);
+      opts.push({ key: ymd(mon), monday: mon, label: i === 0 ? '本週' : (i === 1 ? '上週' : '') });
+    }
+    return opts;
+  }
+
+  /** 後端が availableMonths を返さない場合に使う、今月から遡る 6 か月 */
+  function fallbackMonths() {
+    const out = [];
+    for (let i = 0; i <= 5; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+    }
+    return out;
+  }
+
+  function monthLabel(key) {
+    const parts = String(key).split('-').map(Number);
+    return parts[0] === today.getFullYear() ? `${parts[1]} 月` : `${parts[0]}/${parts[1]}`;
+  }
+
+  function fillMonthSelect() {
+    const sel = $('monthSelect');
+    if (!sel) return;
+    const fromServer = state.month && state.month.availableMonths;
+    const list = (Array.isArray(fromServer) && fromServer.length)
+      ? fromServer.slice() : fallbackMonths();
+    const cur = state.monthChoice || list[0];
+    if (list.indexOf(cur) === -1) list.push(cur);
+    list.sort().reverse();   // 新しい月を上に
+    sel.innerHTML = list.map(function (k) {
+      return `<option value="${k}"${k === cur ? ' selected' : ''}>${monthLabel(k)}</option>`;
+    }).join('');
+  }
+
+  function fillWeekSelect() {
+    const sel = $('weekSelect');
+    if (!sel) return;
+    sel.innerHTML = weekOptions().map(function (o) {
+      const days = weekDaysFrom(o.monday);
+      const range = `${fmtMD(days[0])}–${fmtMD(days[6])}`;
+      return `<option value="${o.key}"${o.key === state.weekChoice ? ' selected' : ''}>`
+        + (o.label ? `${o.label} ${range}` : range) + '</option>';
+    }).join('');
+  }
+
+  /** 示範模式用。月ごとに違う数字が出ればデモとしては足りる */
+  function demoMonth(monthKey) {
+    const cur = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
+    const key = monthKey || cur;
+    const parts = key.split('-').map(Number);
+    const isCur = key === cur;
+    const minutes = isCur ? DEMO_MONTH_MINUTES : DEMO_MONTH_MINUTES + (parts[1] % 4) * 600 + 900;
+    return {
+      ok: true,
+      month: key,
+      hours: Math.round((minutes / 60) * 10) / 10,
+      days: isCur ? DEMO_MONTH_DAYS : DEMO_MONTH_DAYS + (parts[1] % 3) + 2,
+      offDays: 0,
+      throughDay: isCur ? today.getDate() : new Date(parts[0], parts[1], 0).getDate(),
+      availableMonths: fallbackMonths(),
+    };
+  }
+
+  async function loadMonthHours(monthKey) {
+    if (isDemoMode) { applyMonth(demoMonth(monthKey), monthKey); return; }
+
+    if (monthKey) $('monthHoursSub').textContent = '讀取中…';
+    const res = await Auth.get('getMonthHours', monthKey ? { month: monthKey } : {});
     if (!res.ok) {
       $('monthHoursSub').textContent = Auth.describeError(res.error);
       return;
     }
-    applyMonth(res);
+    applyMonth(res, monthKey);
   }
 
-  /** getMonthHours の応答を state に写す（bootstrap ぶんも同じ形） */
-  function applyMonth(res) {
+  /**
+   * getMonthHours の応答を state に写す（bootstrap ぶんも同じ形）。
+   * asked と違う月が返ってきたら、後端がまだ month 引数を知らない版。
+   * 貼り直す前でも壊れないよう、その旨だけ出して本月の数字を見せる。
+   */
+  function applyMonth(res, asked) {
     state.month = res;
+    if (res.month) state.monthChoice = res.month;
+    state.monthStale = (asked && res.month && res.month !== asked) ? asked : null;
+    fillMonthSelect();
     renderHours();
   }
 
-  /** 本月／下週の表示切替（値は両方すでに取得済みなので、出し分けるだけ） */
-  function setHoursMode(mode) {
-    $('monthHoursCard').style.display = mode === 'month' ? 'flex' : 'none';
-    $('weekHoursCard').style.display = mode === 'week' ? 'flex' : 'none';
-    $('hoursTabMonth').classList.toggle('is-active', mode === 'month');
-    $('hoursTabWeek').classList.toggle('is-active', mode === 'week');
-    // 見出し右肩の「〇月」は本月の話なので、下週を見ている間は出さない
-    $('hoursMonthLabel').style.display = mode === 'month' ? '' : 'none';
+  async function selectWeek(key) {
+    state.weekChoice = key;
+    if (key === 'next' || state.weekStats[key]) { renderHours(); return; }
+
+    $('weekHours').textContent = '—';
+    $('weekHoursSub').textContent = '讀取中…';
+    const days = weekDaysFrom(fromYmd(key));
+
+    if (isDemoMode) {
+      const mine = {};
+      days.forEach(function (d, i) { mine[ymd(d)] = DEMO_LAST_WEEK[i] || ''; });
+      state.weekStats[key] = subtotalFromMine(mine, days);
+      renderHours();
+      return;
+    }
+
+    const res = await Auth.get('getWeek', { dates: days.map(ymd).join(',') });
+    if (!res.ok) {
+      // 選び直せば再試行できるので、ここでは出しっぱなしにしない
+      if (state.weekChoice === key) $('weekHoursSub').textContent = Auth.describeError(res.error);
+      return;
+    }
+    state.weekStats[key] = subtotalFromMine(res.mine, days);
+    if (state.weekChoice === key) renderHours();
   }
-  onClick('hoursTabMonth', function () { setHoursMode('month'); });
-  onClick('hoursTabWeek', function () { setHoursMode('week'); });
+
+  onChange('monthSelect', function (e) { loadMonthHours(e.target.value); });
+  onChange('weekSelect', function (e) { selectWeek(e.target.value); });
 
   function renderHours() {
-    const wk = weekSubtotal();
-    $('weekHours').textContent = wk.hours;
-    $('weekHoursSub').textContent = wk.days
-      ? `上班 ${wk.days} 天${wk.offDays ? ` ・ 排休 ${wk.offDays} 天` : ''}`
-      : (wk.offDays ? `全部排休 ${wk.offDays} 天` : '尚未選擇');
+    // ---- 右：週 ----
+    const wk = state.weekChoice === 'next'
+      ? weekSubtotal()                    // 編集中の内容をそのまま映す
+      : state.weekStats[state.weekChoice];
+    if (!wk) {
+      $('weekHours').textContent = '—';   // 取得中。sub は selectWeek が出している
+    } else {
+      $('weekHours').textContent = wk.hours;
+      $('weekHoursSub').textContent = wk.days
+        ? `上班 ${wk.days} 天${wk.offDays ? ` ・ 排休 ${wk.offDays} 天` : ''}`
+        : (wk.offDays
+            ? `全部排休 ${wk.offDays} 天`
+            : (state.weekChoice === 'next' ? '尚未選擇' : '這週沒有班'));
+    }
 
+    // ---- 左：月 ----
     const m = state.month;
     if (!m) return;
 
     $('monthHours').textContent = m.hours;
-    $('hoursMonthLabel').textContent = m.month ? `${Number(m.month.split('-')[1])} 月` : '';
-    if (m.note === 'month_sheet_not_found') {
-      $('monthHoursSub').textContent = '本月分頁尚未建立';
+    if (state.monthStale) {
+      $('monthHoursSub').textContent = '後端尚未更新，暫時只能看本月';
+    } else if (m.note === 'month_sheet_not_found') {
+      $('monthHoursSub').textContent = '該月分頁尚未建立';
     } else if (m.note === 'staff_not_found_in_month_sheet') {
-      $('monthHoursSub').textContent = '本月分頁找不到你的姓名';
+      $('monthHoursSub').textContent = '該月分頁找不到你的姓名';
     } else {
       $('monthHoursSub').textContent =
         `1 日〜${m.throughDay} 日 ・ 上班 ${m.days} 天${m.offDays ? ` ・ 排休 ${m.offDays} 天` : ''}`;

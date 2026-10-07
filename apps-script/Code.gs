@@ -272,15 +272,17 @@ function rosterSheet_() {
  * 直接在試算表上編輯 A/B 欄即可，不用再動這段。
  */
 const SETUP_STAFF = [
-  ['正職', '宮嶋優志 YUJI'],
-  ['內場組長', '林暐軒'],
-  ['PT', '章芮綺'],
-  ['PT', '沈培君'],
-  ['PT', '錢玉珍'],
-  ['PT', '林欣霈'],
-  ['PT', '小羅'],
-  ['PT', '德心'],
-  ['', 'Jack'],
+  ['正職', '山田太郎 TARO'],
+  ['內場組長', '張小龍'],
+  ['PT', '陳小芳'],
+  ['PT', '林小美'],
+  ['PT', '黃小強'],
+  ['PT', '李小華'],
+  ['PT', '小玉'],
+  ['PT', '美心'],
+  ['PT', '小雨'],
+  ['PT', '阿明'],
+  ['', 'Alex'],
 ];
 
 /**
@@ -673,7 +675,7 @@ function round1_(n) { return Math.round(n * 10) / 10; }
  *   {網頁應用程式網址}?line={LINE_WEBHOOK_KEY}
  * 設成 LINE 頻道的 Webhook URL，再把官方帳號拉進群組，群組裡任何人打
  *   綁定          → 記住這個群組，並用 LINE 暱稱自動對應員工姓名
- *   綁定 林欣霈   → 指定自己是名單上的哪一位（暱稱對不上時用這個）
+ *   綁定 李小華   → 指定自己是名單上的哪一位（暱稱對不上時用這個）
  * 對照表存在試算表的「LINE連携」分頁，之後 @提及（mention）就靠它。
  * ========================================================== */
 
@@ -1240,7 +1242,7 @@ function handleLineEvent_(ev) {
       '謝謝邀請！以後忘記填希望排班的人，我會在這個群組提醒。',
       '',
       '想被 @ 點名的話，請在這個群組傳「綁定」兩個字。',
-      'LINE 暱稱跟班表姓名不一樣的話，請傳「綁定 林欣霈」這樣加上姓名。',
+      'LINE 暱稱跟班表姓名不一樣的話，請傳「綁定 李小華」這樣加上姓名。',
     ].join('\n'));
     return;
   }
@@ -1266,7 +1268,7 @@ function handleLineEvent_(ev) {
     return;
   }
 
-  // 「綁定 林欣霈」「綁定林欣霈」「綁定：林欣霈」どれでも姓名を取り出せるように、
+  // 「綁定 李小華」「綁定李小華」「綁定：李小華」どれでも姓名を取り出せるように、
   // 合図の直後にある区切り記号（全角スペース・コロン・読点など）を落とす
   const rest = text.slice(cmd[0].length).replace(/^[\s:：,，、。.\-－—]+/, '').trim();
   const displayName = lineDisplayName_(source.groupId, userId);
@@ -1277,7 +1279,7 @@ function handleLineEvent_(ev) {
   if (rest) {
     matched = names.indexOf(rest) !== -1 ? rest : '';
     if (!matched) {
-      lineReply_(ev.replyToken, '班表上找不到「' + rest + '」這個姓名。\n請照班表上的姓名，傳「綁定 林欣霈」這樣的格式。');
+      lineReply_(ev.replyToken, '班表上找不到「' + rest + '」這個姓名。\n請照班表上的姓名，傳「綁定 李小華」這樣的格式。');
       return;
     }
   } else {
@@ -1290,7 +1292,7 @@ function handleLineEvent_(ev) {
 
   lineReply_(ev.replyToken, matched
     ? '已經把你設定為「' + matched + '」。以後還沒填班表的時候會直接 @ 你。'
-    : '你的 LINE 暱稱「' + (displayName || '?') + '」跟班表上的姓名對不起來。\n請照班表上的姓名，傳「綁定 林欣霈」這樣再試一次。');
+    : '你的 LINE 暱稱「' + (displayName || '?') + '」跟班表上的姓名對不起來。\n請照班表上的姓名，傳「綁定 李小華」這樣再試一次。');
 }
 
 function rememberGroup_(groupId) {
@@ -2482,7 +2484,7 @@ function handleUnlinkAdminNotify_(who) {
  * POST body (text/plain, JSON-encoded to avoid CORS preflight):
  *
  * 首次登入綁定：
- *   { token, id_token, action:'linkAccount', name:'林欣霈' }
+ *   { token, id_token, action:'linkAccount', name:'李小華' }
  *
  * 送出排班（姓名由 id_token 反查，不接受前端指定）：
  *   { token, id_token, action:'submitShift', date:'2026-09-01', off:false, start:'10:30', end:'15:30' }

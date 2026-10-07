@@ -8,24 +8,26 @@
  * 人員異動請直接改試算表，不用回來改這裡。
  */
 const DEMO_STAFF = [
-  {name:"宮嶋優志 YUJI", role:"正職"},
-  {name:"林暐軒", role:"內場組長"},
-  {name:"章芮綺", role:"PT"},
-  {name:"沈培君", role:"PT"},
-  {name:"錢玉珍", role:"PT"},
-  {name:"林欣霈", role:"PT"},
-  {name:"小羅", role:"PT"},
-  {name:"德心", role:"PT"},
-  {name:"Jack", role:""},
+  {name:"山田太郎 TARO", role:"正職"},
+  {name:"張小龍", role:"內場組長"},
+  {name:"陳小芳", role:"PT"},
+  {name:"林小美", role:"PT"},
+  {name:"黃小強", role:"PT"},
+  {name:"李小華", role:"PT"},
+  {name:"小玉", role:"PT"},
+  {name:"美心", role:"PT"},
+  {name:"小雨", role:"PT"},
+  {name:"阿明", role:"PT"},
+  {name:"Alex", role:""},
 ];
 const DEMO_PATTERNS = {
-  "林暐軒": ["10:30\n15:30","排休\nday off","10:30\n15:30","排休\nday off","10:30\n15:30","排休\nday off","排休\nday off"],
-  "章芮綺": ["排休\nday off","排休\nday off","排休\nday off","排休\nday off","10:30\n15:30","排休\nday off","排休\nday off"],
-  "沈培君": ["排休\nday off","10:30\n15:30","10:30\n15:30","17:30\n21:30","11:30\n15:30","排休\nday off","排休\nday off"],
+  "張小龍": ["10:30\n15:30","排休\nday off","10:30\n15:30","排休\nday off","10:30\n15:30","排休\nday off","排休\nday off"],
+  "陳小芳": ["排休\nday off","排休\nday off","排休\nday off","排休\nday off","10:30\n15:30","排休\nday off","排休\nday off"],
+  "林小美": ["排休\nday off","10:30\n15:30","10:30\n15:30","17:30\n21:30","11:30\n15:30","排休\nday off","排休\nday off"],
 };
 
 /** 示範模式下「登入的人」是誰（對應 whoami 的回傳） */
-const DEMO_ME = { name: "林欣霈", role: "PT", email: "demo.staff@example.com" };
+const DEMO_ME = { name: "李小華", role: "PT", email: "demo.staff@example.com" };
 
 /**
  * 示範模式下「上週」DEMO_ME 自己填過的內容（一〜日，共 7 天）。
@@ -51,7 +53,7 @@ const DEMO_MONTH_DAYS = 13;
 
 /** 示範模式下的 Email 對照表（admin.html 的全員名單用） */
 const DEMO_EMAILS = {
-  "宮嶋優志 YUJI": "demo.owner@example.com",
-  "林暐軒": "demo.chief@example.com",
-  "林欣霈": "demo.staff@example.com",
+  "山田太郎 TARO": "demo.owner@example.com",
+  "張小龍": "demo.chief@example.com",
+  "李小華": "demo.staff@example.com",
 };

@@ -419,9 +419,9 @@
         config: { enabled: false, weekday: 5, hour: 12 },
         line: { tokenSet: false, targetSet: false, webhookKeySet: false, webhookUrl: '', linkedCount: 0 },
         // 「可提醒」「無法提醒」が両方出るようにしておく（UIの確認用）
-        remindable: [{ name: '林欣霈', remindable: true }, { name: '王小明', remindable: false }],
+        remindable: [{ name: '李小華', remindable: true }, { name: '王小明', remindable: false }],
         preview: { ok: true, count: 2, dates: state.days.map(ymd), targets: [
-          { name: '林欣霈', missing: 7 }, { name: '王小明', missing: 2 },
+          { name: '李小華', missing: 7 }, { name: '王小明', missing: 2 },
         ] },
       });
       remindBusy(true);

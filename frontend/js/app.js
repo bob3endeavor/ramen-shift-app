@@ -3,7 +3,8 @@
  * 依賴載入順序：config.js -> demo-data.js -> auth.js -> app.js
  *
  * 身分一律來自後端 whoami（Google ID Token 驗證後反查），
- * 前端不再讓使用者自己選姓名，也只會拿到「自己 + 與自己重疊的同事」。
+ * 前端不再讓使用者自己選姓名；班表畫面會拿到「自己 + 全體同事」當週的班別
+ * （與自己重疊的那幾位另外標色，不是篩選條件）。
  */
 (async function () {
   const DOW_ZH = ['日', '一', '二', '三', '四', '五', '六'];
@@ -20,7 +21,9 @@
     me: null,        // {name, role, email}
     days: [],        // 7 Date objects: next week's Mon..Sun
     requests: {},    // "YYYY-MM-DD" -> {off, text, raw}  (= server-confirmed state)
-    overlaps: {},    // "YYYY-MM-DD" -> [{name, role, text}]
+    overlaps: {},    // "YYYY-MM-DD" -> [{name, role, text}]  (= 與自己重疊的同事，標色用)
+    all: {},         // "YYYY-MM-DD" -> [{name, role, text}]  (= 同事全員當天的班別)
+    roster: [],      // [{name, role}]  (= 同事名單，矩陣的行)
     weekErrors: {},  // "YYYY-MM-DD" -> error code
     month: null,     // {hours, days, offDays, month, note, availableMonths}
     monthChoice: null,   // 左のプルダウンで見ている月 'YYYY-MM'
@@ -666,6 +669,8 @@
    */
   function applyWeek(res) {
     state.overlaps = res.overlaps || {};
+    state.all = res.all || {};
+    state.roster = res.roster || [];
     state.weekErrors = res.errors || {};
     state.requests = {};
     Object.keys(res.mine || {}).forEach(function (date) {
@@ -681,7 +686,7 @@
     }
   }
 
-  /** 示範模式：用 DEMO_PATTERNS 在前端模擬後端的重疊比對 */
+  /** 示範模式：用 DEMO_PATTERNS 在前端模擬後端的「同事全員班別」 */
   function loadWeekDemo() {
     state.demoWeek = {};
     state.days.forEach(function (d, i) {
@@ -691,43 +696,48 @@
         state.demoWeek[key][name] = DEMO_PATTERNS[name][i];
       });
     });
+    state.roster = DEMO_STAFF.filter(function (p) { return p.name !== state.me.name; })
+      .map(function (p) { return { name: p.name, role: p.role }; });
     recomputeDemoOverlaps();
   }
 
   function recomputeDemoOverlaps() {
     state.overlaps = {};
+    state.all = {};
     state.days.forEach(function (d) {
       const key = ymd(d);
       const mine = state.requests[key];
-      if (!mine || mine.off) return;
-      const myRange = parseRange(mine.raw);
-      if (!myRange) return;
+      const myRange = (mine && !mine.off) ? parseRange(mine.raw) : null;
 
+      const all = [];
       const matches = [];
       DEMO_STAFF.forEach(function (person) {
         if (person.name === state.me.name) return;
         const parsed = parseServerValue(state.demoWeek[key] && state.demoWeek[key][person.name]);
-        if (!parsed || parsed.off) return;
+        all.push({ name: person.name, role: person.role, text: parsed ? parsed.text : '' });
+        if (!myRange || !parsed || parsed.off) return;
         const other = parseRange(parsed.raw);
         if (other && rangesOverlap(myRange, other)) {
           matches.push({ name: person.name, role: person.role, text: parsed.text });
         }
       });
+      state.all[key] = all;
       if (matches.length) state.overlaps[key] = matches;
     });
   }
 
-  /** 存檔後在背景重新整理，讓重疊資訊跟著更新 */
+  /** 存檔後在背景重新整理，讓同事班別跟著更新 */
   /**
-   * 保存の応答に相乗りしてきた「その日の重なる同僚」を反映する。
+   * 保存の応答に相乗りしてきた「その日の同事全員の班別」を反映する。
    *
-   * 重なりは日ごとに独立なので、変えた日だけ差し替えれば足りる。
+   * 日ごとに独立なので、変えた日だけ差し替えれば足りる。
    * これで保存のたびの getWeek（もう 1 往復＝1〜2 秒）が要らなくなる。
-   * 応答に overlaps が無い＝後端がまだ古いので、false を返して
+   * 応答に all が無い＝後端がまだ古いので、false を返して
    * 従来どおり refreshOverlaps() に任せる。
    */
   function applyDayOverlaps(key, result) {
-    if (!result || !Object.prototype.hasOwnProperty.call(result, 'overlaps')) return false;
+    if (!result || !Object.prototype.hasOwnProperty.call(result, 'all')) return false;
+    state.all[key] = result.all || [];
     if (result.overlaps && result.overlaps.length) state.overlaps[key] = result.overlaps;
     else delete state.overlaps[key];
     return true;
@@ -738,6 +748,8 @@
     const res = await Auth.get('getWeek', { dates: state.days.map(ymd).join(',') });
     if (!res.ok) return;
     state.overlaps = res.overlaps || {};
+    state.all = res.all || {};
+    state.roster = res.roster || [];
     renderAll();
   }
 
@@ -1139,25 +1151,12 @@
     else { renderAll(); refreshOverlaps(); }
   };
 
-  /* ---------------- 預覽矩陣（自己 + 重疊同事） ---------------- */
-
-  function overlapColleagues() {
-    const seen = {};
-    const list = [];
-    state.days.forEach(function (d) {
-      (state.overlaps[ymd(d)] || []).forEach(function (m) {
-        if (seen[m.name]) return;
-        seen[m.name] = true;
-        list.push({ name: m.name, role: m.role || '' });
-      });
-    });
-    return list;
-  }
+  /* ---------------- 預覽矩陣（自己 + 全體同事） ---------------- */
 
   function renderMatrix() {
     const table = $('matrixTable');
     table.innerHTML = '';
-    const colleagues = overlapColleagues();
+    const colleagues = state.roster;
 
     const thead = document.createElement('tr');
     thead.innerHTML = `<th class="name-col">員工</th>` +
@@ -1168,8 +1167,11 @@
       const tr = document.createElement('tr');
       let cells = `<td class="name-col">${person.name}</td>`;
       state.days.forEach(function (d) {
-        const match = (state.overlaps[ymd(d)] || []).find(function (m) { return m.name === person.name; });
-        cells += match ? `<td class="overlap">${match.text}</td>` : `<td>　</td>`;
+        const key = ymd(d);
+        const entry = (state.all[key] || []).find(function (m) { return m.name === person.name; });
+        const isOverlap = (state.overlaps[key] || []).some(function (m) { return m.name === person.name; });
+        if (!entry || !entry.text) { cells += `<td>　</td>`; }
+        else cells += `<td class="${isOverlap ? 'overlap' : ''}">${entry.text}</td>`;
       });
       tr.innerHTML = cells;
       table.appendChild(tr);

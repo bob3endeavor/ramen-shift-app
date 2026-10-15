@@ -46,7 +46,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-09-25 month-picker';
+const CODE_VERSION = '2026-10-15 full-week-visibility';
 
 /* ============================================================
  * Script Properties
@@ -2053,7 +2053,8 @@ function whoamiData_(who) {
 }
 
 /**
- * 一般員工：只回自己那一列，外加「與自己重疊的同事（姓名＋時段）」。
+ * 一般員工：回自己那一列，外加「全體同事當天的班別」（唯讀，不能改別人的）。
+ * 另外標出「與自己重疊」的那幾位，給前端標色用。
  * 管理員：回傳全員完整班表（唯讀）。
  */
 function handleGetWeek_(who, p) {
@@ -2124,11 +2125,15 @@ function employeeWeek_(who, dates) {
 
 /** employeeWeek_ の中身（bootstrap から同梱するために分けてある） */
 /**
- * ある 1 日について「自分の班別」と「自分と重なる同僚」を出す。
+ * ある 1 日について「自分の班別」と「同僚全員の班別」を出す。
+ * `matches` は、その中から「自分と重なる」同僚だけを抜き出したもの
+ * （前端でそのセルだけ標色するために使う。要約パネルもこれを見る）。
  *
- * 重なりは日ごとに独立しているので、1 日だけ書き換えたときは
- * その日だけ計算し直せば足りる（submitShift がそのために使う）。
- * 列を 1 本読むだけなので、週ぜんぶを読み直すより軽い。
+ * 全員分と言っても、返すのは姓名・職稱・班別の文字だけ（Email は含まない）。
+ *
+ * 日ごとに独立しているので、1 日だけ書き換えたときはその日だけ計算し
+ * 直せば足りる（submitShift がそのために使う）。列を 1 本読むだけなので、
+ * 週ぜんぶを読み直すより軽い。
  *
  * 見つからない日は null。
  */
@@ -2137,7 +2142,7 @@ function dayOverlapData_(who, dateStr) {
   if (!loc) return null;
 
   const roster = getRoster_(loc.sheet);
-  if (!roster.length) return { mine: '', matches: [] };
+  if (!roster.length) return { mine: '', matches: [], all: [] };
 
   const colValues = loc.sheet
     .getRange(STAFF_START_ROW, loc.col, roster.length, 1)
@@ -2148,34 +2153,44 @@ function dayOverlapData_(who, dateStr) {
     if (roster[i].name === who.name) { meIndex = i; break; }
   }
   const myRaw = meIndex === -1 ? '' : (colValues[meIndex][0] || '');
-
   const myShift = parseShiftCell_(myRaw);
-  if (!myShift || myShift.off) return { mine: myRaw, matches: [] };
+  const myRange = (myShift && !myShift.off)
+    ? [toMin_(myShift.start), toMin_(myShift.end)]
+    : null;
 
-  // 只回傳「與我重疊」的同事姓名與時段，不回傳其他人的完整班表
-  const myRange = [toMin_(myShift.start), toMin_(myShift.end)];
+  const all = [];
   const matches = [];
   roster.forEach(function (person, i) {
     if (person.name === who.name) return;
     const shift = parseShiftCell_(colValues[i][0]);
-    if (!shift || shift.off) return;
-    if (rangesOverlap_(myRange, [toMin_(shift.start), toMin_(shift.end)])) {
+    all.push({ name: person.name, role: person.role, text: shift ? shift.text : '' });
+    if (myRange && shift && !shift.off &&
+        rangesOverlap_(myRange, [toMin_(shift.start), toMin_(shift.end)])) {
       matches.push({ name: person.name, role: person.role, text: shift.text });
     }
   });
-  return { mine: myRaw, matches: matches };
+  return { mine: myRaw, matches: matches, all: all };
 }
 
 function employeeWeekData_(who, dates) {
   const mine = {};
   const overlaps = {};
+  const all = {};
   const errors = {};
+  const seen = {};
+  const roster = [];
 
   dates.forEach(function (dateStr) {
     const day = dayOverlapData_(who, dateStr);
     if (!day) { errors[dateStr] = 'sheet_or_date_not_found'; mine[dateStr] = ''; return; }
     mine[dateStr] = day.mine;
     if (day.matches.length) overlaps[dateStr] = day.matches;
+    all[dateStr] = day.all;
+    day.all.forEach(function (p) {
+      if (seen[p.name]) return;
+      seen[p.name] = true;
+      roster.push({ name: p.name, role: p.role });
+    });
   });
 
   return {
@@ -2184,6 +2199,8 @@ function employeeWeekData_(who, dates) {
     me: { name: who.name, role: who.roleTitle || '' },
     mine: mine,
     overlaps: overlaps,
+    all: all,
+    roster: roster,
     errors: errors,
   };
 }
@@ -2610,9 +2627,9 @@ function handleSubmitShift_(who, body) {
   // 何日分いじったかだけ数えておく（notifySubmit が取り出して送る）。
   bumpSubmitPending_(who.name);
 
-  // 書き換えた日の「重なる同僚」を一緒に返す。
+  // 書き換えた日の「同僚全員の班別」（＋重なる同僚）を一緒に返す。
   // これが無いと前端が保存のたびに getWeek を叩き直すことになり、
-  // 1 回 1〜2 秒の往復がもう 1 つ増える。重なりは日ごとに独立なので、
+  // 1 回 1〜2 秒の往復がもう 1 つ増える。日ごとに独立なので、
   // 変えた日だけ計算すれば足りる。
   const day = dayOverlapData_(who, body.date);
   return jsonOut_({
@@ -2620,5 +2637,6 @@ function handleSubmitShift_(who, body) {
     name: who.name,
     date: body.date,
     overlaps: day ? day.matches : [],
+    all: day ? day.all : [],
   });
 }

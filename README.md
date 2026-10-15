@@ -26,7 +26,7 @@
 
 | 角色 | 判定方式 | 可以做什麼 |
 | --- | --- | --- |
-| 一般員工 | LINE userId 在「LINE連携」分頁（或 Email 在試算表 C 欄） | 只能查看／填寫**自己**的希望排班；只看得到**與自己時段重疊**的同事姓名與時段；可看自己本月累計工時 |
+| 一般員工 | LINE userId 在「LINE連携」分頁（或 Email 在試算表 C 欄） | 只能填寫**自己**的希望排班；可看到**全體同事**當週的姓名與時段（與自己重疊的會標色），以及自己本月累計工時 |
 | 管理員 | Email 在 Script Properties 的 `ADMIN_EMAILS` 內 | `admin.html` 唯讀查看全員班表、全員帳號綁定狀態 |
 | 未綁定 | 登入成功但 Email 不在 C 欄也不是管理員 | 只能進入「首次登入」畫面，從尚未綁定的名單中選自己的姓名 |
 
@@ -90,13 +90,13 @@ ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁�
 | GET | `ping` | 任何人 | 健康檢查。回傳 `version`，可用來確認貼上的 Code.gs 真的部署了 |
 | GET | `bootstrap` | 員工本人 | **員工頁開啟時只叫這一支**。身分、下週班表、本月累計一次回傳 |
 | GET | `whoami` | 登入者 | `{role:'admin'\|'employee'\|'unregistered', name, email, unboundRoster}` |
-| GET | `getWeek` | 員工／管理員 | 員工：自己那一列 + 與自己重疊的同事（姓名＋時段）<br>管理員：全員完整班表 |
+| GET | `getWeek` | 員工／管理員 | 員工：自己那一列 + 全體同事當週的姓名＋時段（與自己重疊的會另外標出來）<br>管理員：全員完整班表 |
 | GET | `getMonthHours` | 員工本人 | 本月至今累計時數（排休不計），可選帶 `nextWeekDates` 一併算小計 |
 | GET | `getAdminRoster` | 僅管理員 | 全員姓名、職稱、Email |
 | GET | `getReminderConfig` | 僅管理員 | LINE 催繳提醒的設定、LINE 連線狀態、目前未提出名單 |
 | GET | `startLineLink` | 員工本人 | 產生帶簽章 `state` 的 LINE Login 授權網址 |
 | POST | `linkAccount` | 未綁定者 | 首次登入把 `(姓名, Email)` 寫入 C 欄 |
-| POST | `submitShift` | 員工本人 | 寫入班表；姓名由 ID Token 反查，不看前端傳的值。**順便回傳那天的重疊同事**，前端就不用再叫一次 `getWeek` |
+| POST | `submitShift` | 員工本人 | 寫入班表；姓名由 ID Token 反查，不看前端傳的值。**順便回傳那天全體同事的班別**，前端就不用再叫一次 `getWeek` |
 | POST | `unlinkLine` | 員工本人 | 解除自己的 LINE 連結 |
 | POST | `notifySubmit` | 員工本人 | 送出班表時通知店主（沒有變更就不送）|
 | POST | `setReminderConfig` | 僅管理員 | 改提醒的開關／星期／時段，並重建時間驅動觸發器 |
@@ -203,11 +203,11 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
    （管理員走 `index.html` 的 Google 登入 → `admin.html`）
 2. 為什麼要併成一支：`/exec` 一個來回就要 1〜2 秒，這是平台轉址的成本，
    跟後端做多少事無關。以前分成 `whoami` → `getWeek` → `getMonthHours`
-   三次，等待時間幾乎都花在來回本身。班表只回自己那一列 + 與自己重疊的
-   同事，不會拿到其他人的完整班表。
+   三次，等待時間幾乎都花在來回本身。班表回自己那一列 + 全體同事當週的
+   姓名與時段（不含 Email），讓員工填班時能看到大家目前的狀況。
 3. 選日期、班別後按「確認設定」，`POST` 立刻寫入試算表對應儲存格
-   （依日期自動判斷月份分頁）。**回應裡就附上那天的重疊同事**，所以不用
-   再叫一次 `getWeek`——重疊是逐日獨立的，只有改到的那天會變。
+   （依日期自動判斷月份分頁）。**回應裡就附上那天全體同事的班別**，所以
+   不用再叫一次 `getWeek`——這些資料逐日獨立，只有改到的那天會變。
 4. 「排休」寫入 `排休\nday off`，正常班別寫入 `開始時間\n結束時間`，
    格式與店長現有試算表完全一致。
 5. 「工時試算」的本月累計來自 `getMonthHours`（只算到今天為止，排休不計）；

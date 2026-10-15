@@ -1160,7 +1160,11 @@
 
     const thead = document.createElement('tr');
     thead.innerHTML = `<th class="name-col">員工</th>` +
-      state.days.map(function (d) { return `<th>${fmtMD(d)}</th>`; }).join('');
+      state.days.map(function (d) {
+        const w = d.getDay();
+        const cls = w === 6 ? 'sat' : (w === 0 ? 'sun' : '');
+        return `<th class="${cls}">${fmtMD(d)}<br><span class="th-dow">${DOW_ZH[w]}</span></th>`;
+      }).join('');
     table.appendChild(thead);
 
     colleagues.forEach(function (person) {

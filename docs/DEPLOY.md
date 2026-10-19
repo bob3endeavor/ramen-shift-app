@@ -120,9 +120,9 @@
    > （沒有分頁的日期會被標成不可點選）。已存在的分頁不會被覆蓋，
    > 所以這兩個函式重複執行都是安全的。
 
-5. 確認 `setupProperties()` 裡的三個值（`API_TOKEN` 與 `GOOGLE_CLIENT_ID`
-   已經填好；`ADMIN_EMAILS` 是預留值，要自己在「專案設定 > 指令碼屬性」
-   填上店主的 Email —— 這個 repo 是公開的，Email 不寫進程式碼），
+5. 確認 `setupProperties()` 裡的四個值（`API_TOKEN` 與 `GOOGLE_CLIENT_ID`
+   已經填好；`ADMIN_EMAILS` 和 `JOIN_CODE` 是預留值，要自己在
+   「專案設定 > 指令碼屬性」填上 —— 這個 repo 是公開的，這兩個不寫進程式碼），
    然後在函式下拉選單選 `setupProperties`，按執行 ▶：
 
    | Script Property | 用途 |
@@ -130,9 +130,24 @@
    | `API_TOKEN` | 簡易共享密鑰，擋掉隨機亂打的請求。前端 `config.js` 要填同一組 |
    | `GOOGLE_CLIENT_ID` | A 步驟拿到的 OAuth 用戶端 ID。後端用它檢查 ID Token 的 `aud` |
    | `ADMIN_EMAILS` | 管理員 Email，逗號分隔，例如 `owner@gmail.com,manager@gmail.com` |
+   | `JOIN_CODE` | 綁定碼。員工第一次綁定姓名時要輸入，店長私下告訴新人。自己想一組英數字即可，**不要用文件或程式碼裡出現過的字串**（這個 repo 是公開的，範例字串會被第一個試） |
 
    設定完可在「專案設定 > 指令碼屬性 (Script Properties)」確認或修改，
-   **改管理員名單不需要重新部署程式碼**。
+   **改管理員名單與綁定碼都不需要重新部署程式碼**。
+
+   > ⚠ `JOIN_CODE` 沒設定的話，**綁定一律被拒絕**（錯誤碼
+   > `join_code_not_configured`）。這是刻意的：忘記設定時要卡住，
+   > 而不是退回成「任何人都能認領別人的姓名」。
+
+   > ⚠ **對照表的分頁會自動改名**：舊版叫「LINE連携」（日文），2026-10-18
+   > 之後的版本叫「LINE綁定」。第一次有人用到對照表時，程式會把舊分頁改名接手，
+   > **資料不會動，員工也不用重新綁定**。
+   >
+   > 要把程式退回改名前的舊版時，**順序很重要**：
+   > 1. 先在試算表把分頁名稱手動改回 `LINE連携`
+   > 2. 再貼回舊版的 Code.gs
+   >
+   > 只退程式的話，舊版找不到分頁，會另外開一個空的，看起來就像所有綁定都消失了。
 
    > 要用 LINE 催繳提醒的話，這裡再多執行一次 `setupLineReminder()`
    > （會多要一個「建立觸發器」的授權）。細節見
@@ -271,7 +286,10 @@ clasp deploy -d "說明文字"
 
 > `config.js` 會被推上公開 repo，裡面的 `API_TOKEN` 等於是公開的。
 > 這是刻意的取捨：它只是防亂打的門檻，真正決定「你是誰、能改誰的班表」
-> 的是 Google ID Token。不要把任何真正的機密放進 `config.js`。
+> 的是 Google／LINE 的 ID Token。不要把任何真正的機密放進 `config.js`。
+>
+> 同樣的理由，**綁定碼 (`JOIN_CODE`) 絕對不要寫進 `config.js` 或程式碼**。
+> 它是由員工自己輸入的，所以只放在 Script Properties 才有意義。
 
 ---
 
@@ -314,8 +332,13 @@ http://localhost:4173/admin.html。
    `{"ok":true,"message":"Ming Ramen Bar Shift API is running"}`
    → Web App 部署正常。
 2. 開啟 `index.html`，沒有出現「示範模式」黃色橫幅 → `config.js` 已填好。
-3. 用**還沒綁定過的員工 Google 帳號**登入 → 應該進入「請選擇你的姓名」
-   畫面，選完送出後，試算表 C 欄應該出現該 Email。
+3. 用**還沒綁定過的 LINE 帳號**從官方帳號的選單打開班表 → 應該進入
+   「第一次使用，請先綁定」畫面。姓名的下拉選單已經不存在（不把名單送到
+   前端），要自己輸入班表上的姓名＋綁定碼。
+   - 綁定碼留空 → 送出鈕按不下去。打錯 → 「綁定碼不對（還可以試 N 次）」，
+     連錯 5 次會被擋 15 分鐘。
+   - 輸入正確 → 「LINE綁定」分頁會出現 `(姓名, userId)` 這一列。
+   - 用 Google 帳號打 `linkAccount` → 一律回 `bind_via_line_only`（已廢止的路徑）。
 4. 同一個帳號重新整理 → 應該直接進入主畫面，姓名不可更改。
 5. 選一天送出班別 → 試算表對應儲存格寫入 `10:30\n15:30`；
    「工時試算」的「下週希望排班」跟著變動。
@@ -340,7 +363,11 @@ http://localhost:4173/admin.html。
 | `token_expired` | ID Token 約 1 小時過期，頁面會自動退回登入畫面，重新登入即可 |
 | `unauthorized` | `config.js` 的 `API_TOKEN` 跟 Script Properties 的 `API_TOKEN` 不一致 |
 | `not_registered` | 這個 Email 還沒綁定員工姓名（正常情況會自動導向首次登入畫面） |
-| `name_already_linked` | 這位員工的 C 欄已經有別的 Email，需要店長手動清掉才能重新綁定 |
+| `name_already_linked` | 這個姓名已經被別的帳號綁定（C 欄的 Email 或「LINE綁定」分頁的那一列），需要店長手動清掉才能重新綁定 |
+| `invalid_join_code` | 綁定碼打錯了。空白與大小寫不影響，請確認是不是舊的那一組 |
+| `too_many_attempts` | 綁定碼連錯 5 次，同一個帳號被擋 15 分鐘（等時間過或換個帳號） |
+| `join_code_not_configured` | Script Properties 還沒設定 `JOIN_CODE`。設定前綁定一律被拒絕 |
+| `bind_via_line_only` | 用 Google 帳號呼叫了綁定。綁定只走 LINE（LIFF）；Google 要對應員工時由店長把 Email 填進 C 欄 |
 | `sheet_or_date_not_found` | 目標日期所在月份的分頁（例如「9月排班班表」）還沒建立，或分頁命名不符規則 |
 | `staff_not_found` | 試算表 B 欄的姓名前後有多餘空格，或該月分頁少了這個人 |
 | 本月累計時數是 0 | 本月分頁還沒建立，或該分頁裡沒有你的姓名（畫面會標示原因） |

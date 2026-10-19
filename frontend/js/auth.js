@@ -33,7 +33,11 @@ const Auth = (function () {
     employee_only: '這項功能僅限員工本人使用。',
     admin_is_read_only: '管理員帳號為唯讀，無法代為送出排班。',
     email_already_linked: '這個 Google 帳號已經綁定過其他姓名了。',
-    name_already_linked: '這位員工已經被其他 Google 帳號綁定，請聯絡店長。',
+    name_already_linked: '這位員工已經被其他帳號綁定了，請聯絡店長。',
+    invalid_join_code: '綁定碼不對，請再確認一次。',
+    too_many_attempts: '綁定碼錯太多次了，請等 15 分鐘後再試，或是聯絡店長。',
+    join_code_not_configured: '後端還沒設定綁定碼，請聯絡店長。',
+    bind_via_line_only: '請從 LINE 的選單進入班表來綁定，這個頁面不能綁定。',
     staff_not_found: '在試算表裡找不到這位員工，請聯絡店長。',
     roster_sheet_not_found: '找不到排班分頁，請聯絡店長。',
     sheet_or_date_not_found: '試算表裡還沒有這個日期所屬的月份分頁。',
@@ -58,7 +62,7 @@ const Auth = (function () {
 
   const state = {
     idToken: null,
-    profile: null,     // { role, email, name, roleTitle, unboundRoster }
+    profile: null,     // { role, email, name, roleTitle }
     onAuthLost: null,  // 憑證失效時呼叫
     // 'google'（既定・管理頁）か 'line'（LIFF の員工頁）。
     // 後端はこの値で「どちらの id_token として検証するか」を決める。

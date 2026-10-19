@@ -313,7 +313,7 @@
       // LIFF 経由は Email が無い（身分は LINE の userId）ので、その行は出さない
       const bindEmail = $('bindEmail');
       if (bindEmail) bindEmail.textContent = who.email || '';
-      buildBindOptions(who.unboundRoster || []);
+      resetBindForm();
       showOnly(bindGate);
       return;
     }
@@ -367,37 +367,49 @@
 
   /* ---------------- 首次登入：綁定姓名 ---------------- */
 
-  const bindSelect = $('bindSelect');
+  const bindName = $('bindName');
+  const bindCode = $('bindCode');
   const bindBtn = $('bindBtn');
 
-  function buildBindOptions(list) {
-    bindSelect.innerHTML = '<option value="" disabled selected>請選擇姓名</option>';
-    list.forEach(function (s) {
-      const opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = s.role ? `${s.name}（${s.role}）` : s.name;
-      bindSelect.appendChild(opt);
-    });
+  /**
+   * 姓名の候補は後端から来ない。この API は誰でも叩けるので、従業員の
+   * 実名を一覧で返さないようにした（2026-10-18）。本人には班表どおりの
+   * 姓名を打ってもらい、綁定碼で本人確認する。
+   */
+  function resetBindForm() {
+    bindName.value = '';
+    bindCode.value = '';
     bindBtn.disabled = true;
-    if (!list.length) {
-      $('bindError').textContent = '名單裡已經沒有未綁定的員工了，請聯絡店長確認 C 欄 Email。';
-    }
+    $('bindError').textContent = '';
   }
 
-  bindSelect.onchange = function () { bindBtn.disabled = !bindSelect.value; };
+  function syncBindBtn() {
+    bindBtn.disabled = !(bindName.value.trim() && bindCode.value.trim());
+  }
+
+  bindName.oninput = syncBindBtn;
+  bindCode.oninput = syncBindBtn;
 
   bindBtn.onclick = async function () {
-    if (!bindSelect.value || bindBtn.disabled) return;
+    if (bindBtn.disabled) return;
+    const name = bindName.value.trim();
+    const code = bindCode.value.trim();
+    if (!name || !code) return;
+
     bindBtn.disabled = true;
     bindBtn.textContent = '綁定中…';
     $('bindError').textContent = '';
 
-    const res = await Auth.post({ action: 'linkAccount', name: bindSelect.value });
+    const res = await Auth.post({ action: 'linkAccount', name: name, code: code });
 
     bindBtn.textContent = '確認綁定';
     if (!res.ok) {
       bindBtn.disabled = false;
-      $('bindError').textContent = Auth.describeError(res.error);
+      // 綁定碼を間違えたときだけ、残り回数も添える
+      const left = (typeof res.attemptsLeft === 'number' && res.attemptsLeft > 0)
+        ? `（還可以試 ${res.attemptsLeft} 次）`
+        : '';
+      $('bindError').textContent = Auth.describeError(res.error) + left;
       return;
     }
     state.me = {

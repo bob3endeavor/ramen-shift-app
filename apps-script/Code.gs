@@ -16,6 +16,8 @@
  *    - API_TOKEN        簡易共享密鑰（擋隨機亂打）
  *    - GOOGLE_CLIENT_ID Google Cloud Console 建立的網頁用戶端 ID
  *    - ADMIN_EMAILS     管理員 Email，逗號分隔
+ *    - JOIN_CODE        綁定碼：員工第一次用 LINE 綁定姓名時要輸入的暗號
+ *                       （沒設定的話，綁定一律被拒絕）
  * 4. 部署 > 新增部署作業 > 類型選「網頁應用程式」：
  *    - 執行身分：我 (你的帳號)
  *    - 誰可以存取：任何人 (Anyone) — 身分驗證由 ID Token 負責
@@ -46,7 +48,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-15 full-week-visibility';
+const CODE_VERSION = '2026-10-18 join-code-bind';
 
 /* ============================================================
  * Script Properties
@@ -73,6 +75,15 @@ function setupProperties() {
     // 請直接在「專案設定 > 指令碼屬性」新增 ADMIN_EMAILS，
     // 多位管理員用逗號分隔：owner@gmail.com,manager@gmail.com
     ADMIN_EMAILS: 'PASTE_ADMIN_EMAILS_IN_SCRIPT_PROPERTIES',
+
+    // ⚠ 綁定碼も同じ理由（この repo は公開）でここには書かない。
+    // 員工が LINE で初めて姓名を綁定するときに入力する暗号。新人には
+    // 店長が口頭／個別のメッセージで伝える。
+    // 「專案設定 > 指令碼屬性」で JOIN_CODE を追加すること。
+    // ⚠ 値は店側で決める。この repo は公開なので、ここにも手順書にも
+    //    具体例は載せない（例として書いた文字列は真っ先に試されるため）。
+    // 未設定なら綁定そのものを拒否する（誰でも姓名を名乗れる状態に戻さないため）。
+    JOIN_CODE: 'PASTE_JOIN_CODE_IN_SCRIPT_PROPERTIES',
   };
 
   // PASTE_ 開頭的預留值不寫入，避免覆蓋掉已經設好的實際值
@@ -92,6 +103,64 @@ function setupProperties() {
 
 function getToken_() { return props_().getProperty('API_TOKEN') || ''; }
 function getClientId_() { return (props_().getProperty('GOOGLE_CLIENT_ID') || '').trim(); }
+function joinCode_() { return (props_().getProperty('JOIN_CODE') || '').trim(); }
+
+/** 綁定碼の間違いを何回まで許すか、と締め出す長さ */
+const JOIN_FAIL_LIMIT = 5;
+const JOIN_FAIL_WINDOW_SEC = 900;   // 15 分
+
+/**
+ * 綁定碼の正規化。口頭やメッセージで伝わる前提なので、前後の空白・
+ * 途中の空白・ハイフン・大小文字の違いは吸収する。
+ */
+function normJoinCode_(s) {
+  return String(s == null ? '' : s).replace(/[\s\-_]+/g, '').toUpperCase();
+}
+
+/**
+ * 綁定碼の照合。
+ *
+ * API_TOKEN（checkSharedToken_）とは逆に、**未設定なら通さない**。
+ * 設定を忘れた瞬間に「誰でも他人の姓名を名乗れる」状態へ戻ってしまうため、
+ * ここだけは fail-closed にしてある。
+ */
+function checkJoinCode_(provided) {
+  const raw = joinCode_();
+  if (!isSet_(raw)) return false;
+  const expected = normJoinCode_(raw);
+  const given = normJoinCode_(provided);
+  if (!expected || !given) return false;
+  return given === expected;
+}
+
+/**
+ * 綁定碼の失敗を数えるための鍵。相手ごと（LINE userId / Email）に数える。
+ * 生の userId をキャッシュのキーに置かないようハッシュにしている。
+ */
+function joinFailKey_(who) {
+  const id = String((who && (who.lineUserId || who.email)) || 'unknown');
+  return 'joinfail_' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, id)
+  );
+}
+
+/** 残り試行回数。0 なら締め出し中 */
+function joinAttemptsLeft_(who) {
+  const n = Number(CacheService.getScriptCache().get(joinFailKey_(who)) || 0);
+  return Math.max(0, JOIN_FAIL_LIMIT - n);
+}
+
+/**
+ * 失敗を 1 つ数える。短い暗号を総当たりされないための歯止め。
+ * CacheService なので、連打をやめれば時間で自然に解ける。
+ */
+function countJoinFailure_(who) {
+  const cache = CacheService.getScriptCache();
+  const key = joinFailKey_(who);
+  const n = Number(cache.get(key) || 0) + 1;
+  cache.put(key, String(n), JOIN_FAIL_WINDOW_SEC);
+  return n;
+}
 
 function getAdminEmails_() {
   const raw = props_().getProperty('ADMIN_EMAILS') || '';
@@ -375,6 +444,8 @@ function whichSpreadsheet() {
   lines.push('API_TOKEN　　　 ：' + (p.getProperty('API_TOKEN') ? '已設定' : '（未設定！）'));
   lines.push('GOOGLE_CLIENT_ID：' + (p.getProperty('GOOGLE_CLIENT_ID') ? '已設定' : '（未設定！）'));
   lines.push('ADMIN_EMAILS　　：' + (p.getProperty('ADMIN_EMAILS') || '（未設定！）'));
+  // 綁定碼そのものはログに出さない（設定済みかどうか分かれば用は足りる）
+  lines.push('JOIN_CODE　　　 ：' + (isSet_(joinCode_()) ? '已設定' : '（未設定！綁定會被拒絕）'));
 
   const out = lines.join('\n');
   Logger.log(out);
@@ -407,8 +478,8 @@ function hideEmailColumn() {
   const sheets = allMonthSheets_();
   sheets.forEach(function (sh) { sh.hideColumns(EMAIL_COL); });
 
-  const msg = 'Email 欄を隠した分頁：' + sheets.length + ' 件\n' +
-    sheets.map(function (sh) { return '・' + sh.getName(); }).join('\n');
+  const msg = '已隱藏 Email 欄的分頁：' + sheets.length + ' 個\n' +
+    sheets.map(function (sh) { return '‧ ' + sh.getName(); }).join('\n');
   Logger.log(msg);
   return msg;
 }
@@ -500,6 +571,43 @@ function createMonthSheet_(ss, year, month) {
  * 身分驗證
  * ========================================================== */
 
+/** 検証に失敗した id_token を覚えておく長さ（秒） */
+const BAD_TOKEN_CACHE_SEC = 300;
+
+/** Google の id_token が名乗ってよい iss */
+const GOOGLE_ISSUERS = ['accounts.google.com', 'https://accounts.google.com'];
+
+/** base64url（パディング無し）の文字列を復号する */
+function b64urlToString_(s) {
+  let t = String(s == null ? '' : s).replace(/-/g, '+').replace(/_/g, '/');
+  while (t.length % 4 !== 0) t += '=';
+  return Utilities.newBlob(Utilities.base64Decode(t)).getDataAsString();
+}
+
+/**
+ * id_token の中身を**署名を見ずに**覗く。ネットワークに出る前の下見用。
+ *
+ * この Web App は「誰でもアクセス可」で公開しているので、外からでたらめな
+ * id_token を投げ続けられる。1 回ごとに tokeninfo / LINE verify へ
+ * UrlFetch するため、放っておくと 1 日あたりの上限を使い切られ、
+ * **正規のスタッフがログインできず LINE の催促も止まる**。
+ * そこで形・aud・iss・exp を先にローカルで確かめ、明らかに通らないものは
+ * 外に出さない。ここを通っても「検証した」ことにはならない（署名は未確認）。
+ */
+function peekJwtClaims_(idToken) {
+  const parts = String(idToken == null ? '' : idToken).split('.');
+  if (parts.length !== 3 || !parts[1]) return { ok: false };
+
+  let claims;
+  try {
+    claims = JSON.parse(b64urlToString_(parts[1]));
+  } catch (err) {
+    return { ok: false };
+  }
+  if (!claims || typeof claims !== 'object') return { ok: false };
+  return { ok: true, claims: claims };
+}
+
 /**
  * 驗證 Google ID Token，回傳 { ok:true, email } 或 { ok:false, error }。
  * 驗證結果會短暫快取，同一次登入內多支 API 不必重打 tokeninfo。
@@ -513,24 +621,49 @@ function verifyIdToken_(idToken) {
   }
 
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'tok_' + Utilities.base64EncodeWebSafe(
+  const digest = Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)
   );
+  const cacheKey = 'tok_' + digest;
+  const badKey = 'tokbad_' + digest;
+
   const cached = cache.get(cacheKey);
   if (cached) return { ok: true, email: cached };
+  // 一度ダメだった id_token は、しばらく外へ問い合わせ直さない
+  if (cache.get(badKey)) return { ok: false, error: 'invalid_token' };
+
+  // tokeninfo を叩く前にローカルで下見する（peekJwtClaims_ の説明を参照）
+  const peek = peekJwtClaims_(idToken);
+  if (!peek.ok) {
+    cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
+    return { ok: false, error: 'invalid_token' };
+  }
+  if (peek.claims.aud !== clientId) return { ok: false, error: 'token_audience_mismatch' };
+  if (GOOGLE_ISSUERS.indexOf(String(peek.claims.iss || '')) === -1) {
+    cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
+    return { ok: false, error: 'invalid_token' };
+  }
+  const peekExp = Number(peek.claims.exp || 0) * 1000;
+  if (!peekExp || peekExp <= Date.now()) return { ok: false, error: 'token_expired' };
 
   let info;
   try {
     const res = UrlFetchApp.fetch(TOKENINFO_URL + encodeURIComponent(idToken), {
       muteHttpExceptions: true,
     });
-    if (res.getResponseCode() !== 200) return { ok: false, error: 'invalid_token' };
+    if (res.getResponseCode() !== 200) {
+      cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
+      return { ok: false, error: 'invalid_token' };
+    }
     info = JSON.parse(res.getContentText());
   } catch (err) {
     return { ok: false, error: 'token_verify_failed' };
   }
 
-  if (!info || info.error) return { ok: false, error: 'invalid_token' };
+  if (!info || info.error) {
+    cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
+    return { ok: false, error: 'invalid_token' };
+  }
   if (info.aud !== clientId) return { ok: false, error: 'token_audience_mismatch' };
 
   const exp = Number(info.exp || 0) * 1000;
@@ -598,15 +731,16 @@ function resolveIdentity_(idToken, authKind) {
     return { ok: true, email: email, isAdmin: true, role: 'admin', name: '', roleTitle: '管理員' };
   }
 
+  // 以前はここで「まだ Email が入っていない姓名」を全部返していた。
+  // この Web App は誰でも叩けるので、よその Google アカウントからでも
+  // 従業員の実名が読めてしまっていた。綁定は LINE 経路＋綁定碼だけに
+  // 絞ったので、一覧を外に出す必要はもう無い。
   return {
     ok: true,
     email: email,
     isAdmin: false,
     role: 'unregistered',
     name: '',
-    unboundRoster: roster
-      .filter(function (p) { return !p.email; })
-      .map(function (p) { return { name: p.name, role: p.role }; }),
   };
 }
 
@@ -676,12 +810,17 @@ function round1_(n) { return Math.round(n * 10) / 10; }
  * 設成 LINE 頻道的 Webhook URL，再把官方帳號拉進群組，群組裡任何人打
  *   綁定          → 記住這個群組，並用 LINE 暱稱自動對應員工姓名
  *   綁定 李小華   → 指定自己是名單上的哪一位（暱稱對不上時用這個）
- * 對照表存在試算表的「LINE連携」分頁，之後 @提及（mention）就靠它。
+ * 對照表存在試算表的「LINE綁定」分頁，之後 @提及（mention）就靠它。
  * ========================================================== */
 
 const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
 const LINE_REPLY_URL = 'https://api.line.me/v2/bot/message/reply';
-const LINE_LINK_SHEET_NAME = 'LINE連携';
+const LINE_LINK_SHEET_NAME = 'LINE綁定';
+/**
+ * 旧名（日本語）。見つけたら新名に改名して引き継ぐ。
+ * 全店で改名が済んだのを確認したら、この定数と lineLinkSheet_ の改名処理は消してよい。
+ */
+const LINE_LINK_SHEET_NAME_OLD = 'LINE連携';
 const LINE_LINK_HEADER = ['姓名', 'LINE 暱稱', 'userId', '更新時間'];
 
 /** 預設：週五 12 點台、尚未啟用（要在管理頁打開開關才會排程） */
@@ -852,13 +991,31 @@ function collectUnsubmitted_(dates) {
 }
 
 /* ------------------------------------------------------------
- * LINE userId 對照表（試算表的「LINE連携」分頁）
+ * LINE userId 對照表（試算表的「LINE綁定」分頁）
  * ---------------------------------------------------------- */
 
 function lineLinkSheet_(createIfMissing) {
-  let sh = ss_().getSheetByName(LINE_LINK_SHEET_NAME);
+  const ss = ss_();
+  let sh = ss.getSheetByName(LINE_LINK_SHEET_NAME);
+
+  // 旧名のまま残っていたら改名して引き継ぐ（行・列幅・中身はそのまま）。
+  // 新名が既にあるときは触らない（取り違えて上書きしないため）。
+  if (!sh) {
+    const old = ss.getSheetByName(LINE_LINK_SHEET_NAME_OLD);
+    if (old) {
+      try {
+        old.setName(LINE_LINK_SHEET_NAME);
+        sh = old;
+      } catch (err) {
+        // setName は同名が既にあると例外になる。ほぼ同時の別リクエストが
+        // 先に改名した場合なので、新名で引き直す。
+        sh = ss.getSheetByName(LINE_LINK_SHEET_NAME);
+      }
+    }
+  }
+
   if (!sh && createIfMissing) {
-    sh = ss_().insertSheet(LINE_LINK_SHEET_NAME);
+    sh = ss.insertSheet(LINE_LINK_SHEET_NAME);
     sh.getRange(1, 1, 1, LINE_LINK_HEADER.length)
       .setValues([LINE_LINK_HEADER])
       .setFontWeight('bold');
@@ -947,7 +1104,7 @@ function buildReminderPreview_(result, remindable) {
   const dates = result.dates;
   const range = mdLabel_(dates[0]) + '〜' + mdLabel_(dates[dates.length - 1]);
   const lines = result.targets.map(function (p) {
-    return '・' + p.name + '（還有 ' + p.missing + ' 天沒填）' +
+    return '‧ ' + p.name + '（還有 ' + p.missing + ' 天沒填）' +
       (remindable[p.name] ? '' : ' ← 尚未綁定 LINE，無法提醒');
   });
   return '下週（' + range + '）未填完：' + result.targets.length + ' 人\n' + lines.join('\n');
@@ -1105,12 +1262,12 @@ function runReminder_(opts) {
 /** 時間驅動觸發器的進入點（這個函式名被 applyReminderTrigger_ 寫死） */
 function remindUnsubmitted() {
   if (!reminderConfig_().enabled) {
-    console.log('リマインドは無効（REMIND_ENABLED != 1）なので何もしません');
+    console.log('提醒功能是關閉的（REMIND_ENABLED != 1），什麼都不做。');
     return;
   }
   const out = runReminder_({});
   console.log(JSON.stringify(out));
-  if (!out.ok) throw new Error('LINE リマインド失敗: ' + out.error + ' ' + (out.detail || ''));
+  if (!out.ok) throw new Error('LINE 提醒發送失敗：' + out.error + ' ' + (out.detail || ''));
 }
 
 /** 手動確認用：送らずに本文だけログに出す */
@@ -1171,36 +1328,36 @@ function setupLineReminder() {
 
   if (url) {
     console.log([
-      'Messaging API チャネルの Webhook URL に設定する値：',
+      '要填進 Messaging API 頻道的 Webhook URL：',
       url + '?line=' + key,
       '',
-      'LINE Login チャネルのコールバック URL に設定する値：',
+      '要填進 LINE Login 頻道的 Callback URL：',
       url,
     ].join('\n'));
   } else {
     // エディタから実行したときは getUrl() が /dev しか返さないので、
     // そのまま出すと LINE の Webhook 検証が 401 で落ちる。
     console.log([
-      '⚠ ウェブアプリの /exec URL を自動取得できませんでした。',
-      '（エディタから実行した場合、Apps Script は開発用の /dev URL しか',
-      '  返しません。/dev はログインしていないと 401 になるため、LINE には',
-      '  絶対に登録しないでください。）',
+      '⚠ 無法自動取得網頁應用程式的 /exec 網址。',
+      '（從編輯器執行時，Apps Script 只會回傳開發用的 /dev 網址。',
+      '  /dev 在沒有登入的狀態下會回 401，所以絕對不要把 /dev 的網址',
+      '  填進 LINE 的設定裡。）',
       '',
-      '対処：「デプロイ > デプロイを管理」に表示されている **/exec で終わる URL** を',
-      'コピーし、「プロジェクトの設定 > スクリプト プロパティ」の WEBAPP_URL に',
-      '貼り付けてから、この関数をもう一度実行してください。',
+      '處理方式：把「部署 > 管理部署作業」裡顯示的 **以 /exec 結尾的網址** 複製起來，',
+      '貼到「專案設定 > 指令碼屬性」的 WEBAPP_URL，',
+      '然後再執行一次這個函式。',
       '',
-      'その URL を {EXEC} とすると、LINE 側に登録する値は：',
-      '  Messaging API の Webhook URL     : {EXEC}?line=' + key,
-      '  LINE ログインのコールバック URL  : {EXEC}',
+      '把那個網址當作 {EXEC}，要填進 LINE 的值就是：',
+      '  Messaging API 的 Webhook URL : {EXEC}?line=' + key,
+      '  LINE Login 的 Callback URL   : {EXEC}',
     ].join('\n'));
   }
 
   console.log([
     '',
-    '次に「プロジェクトの設定 > スクリプト プロパティ」で',
+    '接下來請到「專案設定 > 指令碼屬性」，把',
     'LINE_CHANNEL_ACCESS_TOKEN / APP_URL / LINE_LOGIN_CHANNEL_ID /',
-    'LINE_LOGIN_CHANNEL_SECRET を実際の値に置き換えてください。',
+    'LINE_LOGIN_CHANNEL_SECRET 換成實際的值。',
   ].join('\n'));
 }
 
@@ -1286,6 +1443,19 @@ function handleLineEvent_(ev) {
     matched = names.find(function (n) { return n === displayName; })
       || names.find(function (n) { return displayName && displayName.indexOf(n) !== -1; })
       || '';
+  }
+
+  // 先に押さえた人が居たら奪わせない（LIFF 経路の name_already_linked と同じ）。
+  // グループに居るのは店長が招いたメンバーだけなので綁定碼までは要求しないが、
+  // 同僚の綁定を上書きできる状態にはしておかない。
+  if (matched) {
+    const taken = readLineLinks_().some(function (l) {
+      return l.name === matched && l.userId !== userId;
+    });
+    if (taken) {
+      lineReply_(ev.replyToken, '「' + matched + '」已經有人綁定了。\n如果那是你自己的舊帳號，請找店長幫你解除舊的綁定。');
+      return;
+    }
   }
 
   saveLineLink_(userId, displayName, matched);
@@ -1420,7 +1590,7 @@ function handleSendReminderTest_(who, body) {
  *     → GET ?action=startLineLink        姓名入りの署名付き state を発行
  *     → access.line.me/oauth2/v2.1/authorize
  *     → GET /exec?code=...&state=...     ここで code を id_token に交換し、
- *                                        sub（userId）を「LINE連携」分頁に書く
+ *                                        sub（userId）を「LINE綁定」分頁に書く
  * ========================================================== */
 
 const LINE_AUTHORIZE_URL = 'https://access.line.me/oauth2/v2.1/authorize';
@@ -1804,7 +1974,7 @@ function lineLinkPage_(ok, title, message, warn) {
  *
  * Google 経路との違いは「何で人を特定するか」だけ：
  *   Google … 檢證済み Email → 試算表 C 欄
- *   LINE  … 檢證済み userId → 「LINE連携」分頁
+ *   LINE  … 檢證済み userId → 「LINE綁定」分頁
  * 特定できたあとは同じ「姓名」に収束するので、班表の読み書きから
  * 先のロジックは一切変わらない。
  *
@@ -1824,14 +1994,33 @@ function verifyLineIdToken_(idToken) {
   if (!isSet_(lineLoginId_())) return { ok: false, error: 'line_login_not_configured' };
 
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'ltok_' + Utilities.base64EncodeWebSafe(
+  const digest = Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)
   );
+  const cacheKey = 'ltok_' + digest;
+  const badKey = 'ltokbad_' + digest;
+
   const cached = cache.get(cacheKey);
   if (cached) return { ok: true, userId: cached };
+  if (cache.get(badKey)) return { ok: false, error: 'invalid_token' };
+
+  // LINE の verify へ出る前の下見。Google 側と同じ理由（UrlFetch の
+  // 1 日上限を外から削られないようにする）。詳細は peekJwtClaims_ を参照。
+  const peek = peekJwtClaims_(idToken);
+  if (!peek.ok) {
+    cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
+    return { ok: false, error: 'invalid_token' };
+  }
+  if (String(peek.claims.aud || '') !== String(lineLoginId_())) {
+    cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
+    return { ok: false, error: 'invalid_token' };
+  }
+  const peekExp = Number(peek.claims.exp || 0) * 1000;
+  if (!peekExp || peekExp <= Date.now()) return { ok: false, error: 'token_expired' };
 
   const claims = lineVerifyIdToken_(idToken);   // nonce なしで検証
   if (!claims.ok) {
+    cache.put(badKey, '1', BAD_TOKEN_CACHE_SEC);
     // LINE の verify は期限切れも 400 で返す。前端が再取得すべきケースなので
     // Google 側と同じ語彙（token_expired / invalid_token）に寄せておく。
     return { ok: false, error: claims.error === 'http_400' ? 'invalid_token' : 'token_verify_failed' };
@@ -1841,7 +2030,7 @@ function verifyLineIdToken_(idToken) {
   return { ok: true, userId: claims.userId, displayName: claims.displayName };
 }
 
-/** userId → 姓名（「LINE連携」分頁の逆引き）。見つからなければ空文字 */
+/** userId → 姓名（「LINE綁定」分頁の逆引き）。見つからなければ空文字 */
 function lineNameByUserId_(userId) {
   if (!userId) return '';
   const hit = readLineLinks_().find(function (l) { return l.userId === userId; });
@@ -1887,9 +2076,9 @@ function resolveLineIdentity_(idToken) {
   }
 
   // 対照表に居ない（＝この LINE アカウントは初めて）。
-  // 選択肢は「まだ LINE と紐付いていない姓名」。Email の有無は見ない
-  // ので、Google で使っている人が後から LINE を足すこともできる。
-  const linked = lineUserIdMap_();
+  // 姓名の一覧はここで返さない：LIFF は LINE アカウントがあれば誰でも
+  // 開けるため、返せば従業員の実名がそのまま外に出る。本人に班表どおりの
+  // 姓名を打ってもらい、綁定碼で本人確認する（linkLineAccount_）。
   return {
     ok: true,
     auth: 'line',
@@ -1899,9 +2088,6 @@ function resolveLineIdentity_(idToken) {
     isAdmin: false,
     role: 'unregistered',
     name: '',
-    unboundRoster: roster
-      .filter(function (p) { return !linked[p.name]; })
-      .map(function (p) { return { name: p.name, role: p.role }; }),
   };
 }
 
@@ -1912,6 +2098,19 @@ function resolveLineIdentity_(idToken) {
 function linkLineAccount_(who, body) {
   const name = String(body.name || '').trim();
   if (!name) return jsonOut_({ ok: false, error: 'missing name' });
+
+  // 綁定碼：姓名を知っているだけでは他人を名乗れないようにする唯一の関門。
+  // LIFF は LINE アカウントがあれば誰でも開けるため、ここは必須。
+  if (!isSet_(joinCode_())) return jsonOut_({ ok: false, error: 'join_code_not_configured' });
+  if (joinAttemptsLeft_(who) <= 0) return jsonOut_({ ok: false, error: 'too_many_attempts' });
+  if (!checkJoinCode_(body.code)) {
+    const failed = countJoinFailure_(who);
+    return jsonOut_({
+      ok: false,
+      error: failed >= JOIN_FAIL_LIMIT ? 'too_many_attempts' : 'invalid_join_code',
+      attemptsLeft: Math.max(0, JOIN_FAIL_LIMIT - failed),
+    });
+  }
 
   const sheet = rosterSheet_();
   if (!sheet) return jsonOut_({ ok: false, error: 'roster_sheet_not_found' });
@@ -2048,7 +2247,6 @@ function whoamiData_(who) {
     // 管理頁への導線を出すかどうか（権限ではない。LIFF 版の選択画面用）
     out.canOpenAdmin = !!who.canOpenAdmin;
   }
-  if (who.role === 'unregistered') out.unboundRoster = who.unboundRoster || [];
   return out;
 }
 
@@ -2549,49 +2747,25 @@ function doPost(e) {
   }
 }
 
-/** 首次登入：把 (姓名, Email) 寫進對照表，之後永久對應 */
+/**
+ * 首次登入：姓名と LINE アカウントを対照表で結ぶ（LINE 経路だけ）。
+ *
+ * Google 経路の「姓名を自己申告して C 欄に Email を書く」綁定は廃止した
+ * （2026-10-18）。この Web App は誰でも叩けるため、よその Google
+ * アカウントでも未綁定の姓名を名乗れて、その人の班表を読み書きできた。
+ * 員工の入口は LINE（LIFF）だけなので、UI 側も使っていない経路だった。
+ *
+ * Google アカウントで員工を紐付けたいときは、店長が名單の C 欄に
+ * Email を直接書く（それだけで resolveIdentity_ が本人を引ける）。
+ */
 function handleLinkAccount_(who, body) {
-  if (who.role === 'admin') return jsonOut_({ ok: false, error: 'admin_cannot_link' });
   if (who.role === 'employee') {
     return jsonOut_({ ok: false, error: 'already_linked', name: who.name });
   }
-
   // LINE（LIFF）経由は Email が無いので、C 欄ではなく対照表に書く
   if (who.auth === 'line') return linkLineAccount_(who, body);
 
-  const name = String(body.name || '').trim();
-  if (!name) return jsonOut_({ ok: false, error: 'missing name' });
-
-  const sheet = rosterSheet_();
-  if (!sheet) return jsonOut_({ ok: false, error: 'roster_sheet_not_found' });
-
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(10000)) return jsonOut_({ ok: false, error: 'busy_try_again' });
-  try {
-    const roster = getRoster_(sheet);
-
-    if (roster.some(function (p) { return p.email === who.email; })) {
-      return jsonOut_({ ok: false, error: 'email_already_linked' });
-    }
-    const target = roster.find(function (p) { return p.name === name; });
-    if (!target) return jsonOut_({ ok: false, error: 'staff_not_found' });
-    if (target.email) return jsonOut_({ ok: false, error: 'name_already_linked' });
-
-    // 每個月分頁都有自己的名單，全部寫入以保持一致
-    let written = 0;
-    allMonthSheets_().forEach(function (sh) {
-      const r = getRoster_(sh).find(function (p) { return p.name === name; });
-      if (!r || r.email) return;
-      sh.getRange(r.row, EMAIL_COL).setValue(who.email);
-      invalidateRoster_(sh);
-      written++;
-    });
-    SpreadsheetApp.flush();
-
-    return jsonOut_({ ok: true, name: name, roleTitle: target.role, sheetsWritten: written });
-  } finally {
-    lock.releaseLock();
-  }
+  return jsonOut_({ ok: false, error: 'bind_via_line_only' });
 }
 
 /** 送出排班：姓名一律由驗證後的 Email 反查，不看前端傳來的 name */
@@ -2639,4 +2813,68 @@ function handleSubmitShift_(who, body) {
     overlaps: day ? day.matches : [],
     all: day ? day.all : [],
   });
+}
+/* ============================================================
+ * 自己テスト
+ * ========================================================== */
+
+/**
+ * Code.gs を貼り直したあと、エディタからこれを 1 回実行して
+ * 「通った」ことを確かめるための自己テスト。
+ *
+ * 試算表も LINE も Google も触らない、純粋な関数だけを見る
+ * （Apps Script には単体テストの仕組みが無いので、その代わり）。
+ */
+function selfTest() {
+  const fails = [];
+  let checked = 0;
+
+  function eq(label, actual, expected) {
+    checked++;
+    if (actual !== expected) {
+      fails.push('‧ ' + label + '：預期 ' + JSON.stringify(expected) +
+        ' / 實際 ' + JSON.stringify(actual));
+    }
+  }
+
+  // --- 綁定碼の正規化（口頭で伝わる前提なので空白と大小文字は吸収する）
+  eq('去掉前後的空白', normJoinCode_('  dummy-code-1  '), 'DUMMYCODE1');
+  eq('也去掉中間的空白與連字號', normJoinCode_('du mmy-code_1'), 'DUMMYCODE1');
+  eq('null 會變成空字串', normJoinCode_(null), '');
+
+  // --- 綁定碼の照合（空は必ず拒否。未設定なら何を出しても拒否）
+  eq('空的綁定碼一律拒絕', checkJoinCode_(''), false);
+  eq('null 的綁定碼一律拒絕', checkJoinCode_(null), false);
+  if (isSet_(joinCode_())) {
+    eq('正確的綁定碼可以通過', checkJoinCode_(joinCode_()), true);
+    eq('小寫、夾空白也可以通過', checkJoinCode_(' ' + joinCode_().toLowerCase() + ' '), true);
+    eq('不一樣的綁定碼會被拒絕', checkJoinCode_(joinCode_() + 'X'), false);
+  } else {
+    eq('沒設定時一律拒絕（fail-closed）', checkJoinCode_('whatever'), false);
+  }
+
+  // --- base64url の復号（JWT の中身はパディングが無い）
+  eq('可以解開沒有 padding 的 base64url', b64urlToString_('eyJhIjoxfQ'), '{"a":1}');
+
+  // --- id_token の下見（署名は見ない。形・aud・exp を取り出せるか）
+  const payload = Utilities.base64EncodeWebSafe(
+    Utilities.newBlob('{"aud":"abc","exp":4102444800,"iss":"https://accounts.google.com"}').getBytes()
+  ).replace(/=+$/, '');
+  const peek = peekJwtClaims_('header.' + payload + '.signature');
+  eq('三段式的 JWT 可以讀出內容', peek.ok, true);
+  eq('可以取出 aud', peek.ok ? peek.claims.aud : '', 'abc');
+  eq('可以取出 iss', peek.ok ? peek.claims.iss : '', 'https://accounts.google.com');
+  eq('不是三段的會被擋掉', peekJwtClaims_('not-a-jwt').ok, false);
+  eq('空字串會被擋掉', peekJwtClaims_('').ok, false);
+  eq('內容不是 base64 的會被擋掉', peekJwtClaims_('a.!!!!.c').ok, false);
+  eq('內容不是 JSON 的會被擋掉',
+    peekJwtClaims_('a.' + Utilities.base64EncodeWebSafe(
+      Utilities.newBlob('hello').getBytes()
+    ).replace(/=+$/, '') + '.c').ok, false);
+
+  const msg = fails.length
+    ? '✗ ' + fails.length + ' / ' + checked + ' 項失敗\n' + fails.join('\n')
+    : '✓ 全部通過（' + checked + ' 項）';
+  Logger.log(msg);
+  return msg;
 }

@@ -74,8 +74,12 @@
 
 - `action=whoami&id_token=...`
   驗證 token，查 Email 對應員工，回傳
-  `{ok, role:'admin'|'employee'|'unregistered', name, unboundRoster}`
-  （`unboundRoster` 只在 `unregistered` 時需要，供首次登入選姓名用）。
+  `{ok, role:'admin'|'employee'|'unregistered', name}`。
+
+  > **2026-10-18 變更**：原本在 `unregistered` 時會一併回傳 `unboundRoster`
+  > （還沒綁定的姓名清單），供首次登入挑選姓名。但這個 Web App 是公開的，
+  > 任何人都能用自己的 Google 帳號呼叫這支 API，等於把員工實名送出去，
+  > 所以移除了。首次綁定改成「自己輸入姓名 ＋ 綁定碼」。
 - `action=getWeek`：沿用現有邏輯，但加上 token 驗證；**一般員工**只
   回傳「自己那一列」＋「其他人是否與自己重疊的簡化資訊（姓名＋時
   段，不含完整班表）」；**管理員**可讀取全部人完整班表。
@@ -89,8 +93,13 @@
 
 ### 4.2 `doPost`
 
-- `action=linkAccount`：首次登入綁定，body `{id_token, name}`，寫入
-  Email 對照表。
+- `action=linkAccount`：首次綁定，body `{id_token, name, code}`。
+  `code` 是綁定碼（Script Properties 的 `JOIN_CODE`）。
+
+  > **2026-10-18 變更**：只接受 LINE（LIFF）路徑，寫入「LINE綁定」分頁。
+  > Google 路徑的「自己申報姓名就寫進 C 欄」已廢止——任何人都能用自己的
+  > Google 帳號認領還沒綁定的姓名，接著讀寫那個人的班表。要讓 Google
+  > 帳號對應員工時，由店長直接把 Email 填進 C 欄。
 - `action=submitShift`：沿用現有寫入班表邏輯，但姓名改由「驗證後的
   Email 反查姓名」決定。
 

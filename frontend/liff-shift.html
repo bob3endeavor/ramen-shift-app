@@ -53,21 +53,29 @@ window.APP_AUTH_MODE = 'liff';
   <div id="syncBanner" class="sync-banner"></div>
 
   <!-- ============ 首次使用：還沒對應到姓名 ============
-       LINE 側ではもう本人が確定しているので、ここで選ぶのは一度きり。
+       LINE 側ではもう「どの LINE アカウントか」は確定している。確定していないのは
+       「それが班表のどの姓名か」なので、ここで姓名を打ってもらい、綁定碼で本人確認する。
+       姓名の一覧は後端から来ない（公開 API なので実名を外に出さない）。
        Google 版と違って Email は無いので、その表示は出さない。 -->
   <div class="gate" id="bindGate" style="display:none;">
     <div class="gate-card">
       <p class="gate-eyebrow">FIRST TIME</p>
-      <h2>請選擇你的姓名</h2>
+      <h2>第一次使用，請先綁定</h2>
       <p class="gate-text">
-        這是你第一次用 LINE 打開這個畫面。請從名單中選擇你的姓名，
+        這是你第一次用 LINE 打開這個畫面。請輸入<b>班表上的姓名</b>和店長給你的<b>綁定碼</b>，
         送出後你的 LINE 帳號就會<b>永久對應</b>到這位員工，之後直接進入班表。
       </p>
-      <div class="select-wrap">
-        <select id="bindSelect">
-          <option value="" disabled selected>請選擇姓名</option>
-        </select>
+      <label class="field-label" for="bindName">班表上的姓名</label>
+      <div class="input-wrap">
+        <input id="bindName" type="text" autocomplete="off" autocapitalize="off"
+               enterkeyhint="next" placeholder="跟班表上一模一樣的姓名">
       </div>
+      <label class="field-label" for="bindCode">綁定碼</label>
+      <div class="input-wrap">
+        <input id="bindCode" type="text" autocomplete="off" autocapitalize="characters"
+               enterkeyhint="done" placeholder="店長給你的綁定碼">
+      </div>
+      <p class="gate-text">不知道綁定碼的話，請問店長。</p>
       <button class="btn-primary" id="bindBtn" disabled>確認綁定</button>
       <p class="gate-error" id="bindError"></p>
     </div>
@@ -196,7 +204,7 @@ window.APP_AUTH_MODE = 'liff';
 
 <script src="js/config.js?v=20260925c"></script>
 <script src="js/demo-data.js?v=20260925c"></script>
-<script src="js/auth.js?v=20260925c"></script>
-<script src="js/app.js?v=20261015"></script>
+<script src="js/auth.js?v=20261018"></script>
+<script src="js/app.js?v=20261018"></script>
 </body>
 </html>

@@ -17,7 +17,7 @@
       Google Apps Script Web App  ──────►  Google 試算表
       （apps-script/Code.gs）              （2026-Ming Ramen Bar-員工排班表）
          │
-         ├─ auth=line → 向 LINE 驗證 id_token，用 userId 查「LINE連携」分頁
+         ├─ auth=line → 向 LINE 驗證 id_token，用 userId 查「LINE綁定」分頁
          └─ 其他     → 用 tokeninfo 驗證，用 Email 查試算表 C 欄
                         兩條路都收斂成「姓名」，之後的邏輯完全一樣
 ```
@@ -26,12 +26,27 @@
 
 | 角色 | 判定方式 | 可以做什麼 |
 | --- | --- | --- |
-| 一般員工 | LINE userId 在「LINE連携」分頁（或 Email 在試算表 C 欄） | 只能填寫**自己**的希望排班；可看到**全體同事**當週的姓名與時段（與自己重疊的會標色），以及自己本月累計工時 |
+| 一般員工 | LINE userId 在「LINE綁定」分頁（或 Email 在試算表 C 欄） | 只能填寫**自己**的希望排班；可看到**全體同事**當週的姓名與時段（與自己重疊的會標色），以及自己本月累計工時 |
 | 管理員 | Email 在 Script Properties 的 `ADMIN_EMAILS` 內 | `admin.html` 唯讀查看全員班表、全員帳號綁定狀態 |
-| 未綁定 | 登入成功但 Email 不在 C 欄也不是管理員 | 只能進入「首次登入」畫面，從尚未綁定的名單中選自己的姓名 |
+| 未綁定 | 登入成功，但不在「LINE綁定」分頁、Email 也不在 C 欄，又不是管理員 | 只能進入「首次使用」畫面，自己輸入**班表上的姓名**＋店長給的**綁定碼**（畫面不會顯示名單） |
 
 關鍵原則：**前端不宣告身分**。所有讀寫都以「後端驗證 ID Token 後反查出來的
 姓名」為準，前端傳來的姓名字串一律忽略。
+
+### 新人要怎麼開始用
+
+1. 店長在月份分頁的 B 欄加上新人的姓名（職稱在 A 欄）。
+2. 店長私下把**綁定碼**（Script Properties 的 `JOIN_CODE`）告訴他。
+3. 新人從 LINE 官方帳號的選單打開班表 → 輸入「班表上的姓名」和綁定碼 → 綁定完成。
+
+綁定碼是擋「自稱員工的人」的門檻。這個 Web App 是公開的（網址與
+`API_TOKEN` 都在這個 repo 裡），沒有綁定碼的話，外人可以隨便認領一個
+還沒綁定的姓名，接著就能讀寫那個人的班表。所以：
+
+- `JOIN_CODE` **沒設定時，後端一律拒絕綁定**（不會退回成「誰都能綁」）。
+- 綁定碼由員工自己輸入，所以**絕對不要寫進 `config.js` 或程式碼**。
+- 綁定碼連錯 5 次，那個帳號會被擋 15 分鐘。
+- 要換綁定碼只要改 Script Properties，不用重新部署。
 
 ## 目錄結構
 
@@ -66,7 +81,7 @@ ramen-shift-app/
 | --- | --- | --- |
 | A | 職稱 | 經理／內場組長／PT／支援 |
 | B | 姓名 | 身分對照的主鍵 |
-| C | **Email** | 員工首次 Google 登入綁定後自動寫入；也可由店長手動預填。**這一欄預設是隱藏的**（系統用來反查身分，不是給人看的）。隱藏不影響讀寫，要看的話選 B、D 兩欄右鍵「取消隱藏欄」。舊分頁可以執行 `hideEmailColumn()` 一次隱藏 |
+| C | **Email** | 由店長手動填入（員工自己申報姓名來綁定的功能已移除，見「權限模型」）。**這一欄預設是隱藏的**（系統用來反查身分，不是給人看的）。隱藏不影響讀寫，要看的話選 B、D 兩欄右鍵「取消隱藏欄」。舊分頁可以執行 `hideEmailColumn()` 一次隱藏 |
 
 第 1 列是欄位標題 + 日期（D 欄之後是 1〜月底），第 2 列是星期，
 員工資料從第 3 列開始，每個月一個分頁（`9月排班班表`）。
@@ -82,20 +97,20 @@ ramen-shift-app/
 
 所有 `action` 都需要帶 `token`（共享密鑰）與 `id_token`，`ping` 除外。
 `id_token` 預設當成 Google ID Token 驗證；帶 `auth=line` 時則當成 LINE 的
-ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁反查姓名。
+ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE綁定」分頁反查姓名。
 管理員權限只看 `ADMIN_EMAILS`，所以走 LINE 進來的人不會是管理員。
 
 | 方法 | action | 誰可以用 | 回傳 |
 | --- | --- | --- | --- |
 | GET | `ping` | 任何人 | 健康檢查。回傳 `version`，可用來確認貼上的 Code.gs 真的部署了 |
 | GET | `bootstrap` | 員工本人 | **員工頁開啟時只叫這一支**。身分、下週班表、本月累計一次回傳 |
-| GET | `whoami` | 登入者 | `{role:'admin'\|'employee'\|'unregistered', name, email, unboundRoster}` |
+| GET | `whoami` | 登入者 | `{role:'admin'\|'employee'\|'unregistered', name, email}`（未綁定者也不會拿到名單） |
 | GET | `getWeek` | 員工／管理員 | 員工：自己那一列 + 全體同事當週的姓名＋時段（與自己重疊的會另外標出來）<br>管理員：全員完整班表 |
 | GET | `getMonthHours` | 員工本人 | 本月至今累計時數（排休不計），可選帶 `nextWeekDates` 一併算小計 |
 | GET | `getAdminRoster` | 僅管理員 | 全員姓名、職稱、Email |
 | GET | `getReminderConfig` | 僅管理員 | LINE 催繳提醒的設定、LINE 連線狀態、目前未提出名單 |
 | GET | `startLineLink` | 員工本人 | 產生帶簽章 `state` 的 LINE Login 授權網址 |
-| POST | `linkAccount` | 未綁定者 | 首次登入把 `(姓名, Email)` 寫入 C 欄 |
+| POST | `linkAccount` | 未綁定者（僅 LINE 路徑） | 首次綁定，body 要帶 `{name, code}`（`code` = 綁定碼）。把 `(姓名, userId)` 寫入「LINE綁定」分頁。Google 路徑的自己申報綁定已廢止 |
 | POST | `submitShift` | 員工本人 | 寫入班表；姓名由 ID Token 反查，不看前端傳的值。**順便回傳那天全體同事的班別**，前端就不用再叫一次 `getWeek` |
 | POST | `unlinkLine` | 員工本人 | 解除自己的 LINE 連結 |
 | POST | `notifySubmit` | 員工本人 | 送出班表時通知店主（沒有變更就不送）|
@@ -122,7 +137,7 @@ ID Token（LIFF 的 `liff.getIDToken()`）驗證，改用「LINE連携」分頁�
   存成 Script Properties，實際靠 Apps Script 的時間驅動觸發器跑。
   預設是**週五 12 時台**（週次觸發器只精確到「時段」）。
 - 私訊要有 LINE 的 userId。員工**從 LINE 的選單開一次排班頁（LIFF）**就會
-  自動對應，不用做任何登入操作。對照表在試算表的 `LINE連携` 分頁。
+  自動對應，不用做任何登入操作。對照表在試算表的 `LINE綁定` 分頁。
   - 一次都沒開過的人送不出去，管理頁會標成「無法提醒」，請店長另外告知。
   - ⚠ 沒把官方帳號加為好友的人也收不到，而且 **LINE 仍然回 200**，
     所以程式無法察覺。試送之後請向對方確認真的有收到。
@@ -230,6 +245,9 @@ Script Properties 要設哪些值、測試檢查清單、常見錯誤對照表�
   無法驗證，改用網址上的 `?line={LINE_WEBHOOK_KEY}` 當作合言葉。
 - **Email 寫在每個月分頁的 C 欄**。綁定時會把 Email 寫進所有既有月份分頁，
   但**之後新增的月份分頁需要自己帶上 C 欄 Email**（複製既有分頁即可）。
+- **綁定碼是全店共用的一組**（`JOIN_CODE`）。流出去的話，知道同事姓名的人
+  就能認領還沒綁定的姓名，所以只私下告訴新人；人員大幅變動後換一次。
+  要改只要動 Script Properties，不用重新部署。
 - ID Token 約 1 小時過期，過期後頁面會自動退回登入畫面重新登入。
 - 顏色（是否已確認班表）的邏輯沒有處理，只寫入文字內容；店長端仍需自行上色。
 - **時薪與金額試算本期不做**。`getMonthHours` 之後可以直接擴充成

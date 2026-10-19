@@ -292,6 +292,21 @@
     width:100%; font-family:'Noto Sans TC', sans-serif; font-size:15px; font-weight:700;
     color:var(--ink); padding-right:20px;
   }
+  /* 綁定（姓名・綁定碼）の入力欄。見た目は .select-wrap に合わせ、▾ だけ出さない */
+  .gate .field-label{
+    display:block; text-align:left; margin:0 0 5px;
+    font-size:11.5px; font-weight:700; color:var(--ink-soft);
+  }
+  .gate .input-wrap{
+    text-align:left; margin-bottom:12px; padding:12px 14px;
+    background:var(--paper-2); border:1.5px solid var(--line-paper); border-radius:10px;
+  }
+  .gate .input-wrap:focus-within{ border-color:var(--chili); }
+  .gate .input-wrap input{
+    width:100%; border:none; background:transparent;
+    font-family:'Noto Sans TC', sans-serif; font-size:15px; font-weight:700; color:var(--ink);
+  }
+  .gate .input-wrap input:focus{ outline:none; }
 
   .btn-primary{
     display:inline-block; width:100%; background:var(--chili); color:var(--paper);

@@ -50,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-22 cross-month-columns';
+const CODE_VERSION = '2026-10-22 cross-month-holiday-color';
 
 /* ============================================================
  * Script Properties
@@ -411,6 +411,12 @@ function monthSheetsNewestFirst_() {
 
 const DOW_ZH_GS = ['日', '一', '二', '三', '四', '五', '六'];
 
+// 分頁の色。跨月の鏡像欄も同じものを使う（「休日は同じ色」を保つため、
+// 定数を共有する。片方だけ直すと色がズレる）
+const HEADER_BG = '#f0ece1';     // 1〜2 列目（見出しと星期）
+const SUNDAY_BG = '#fdeaea';     // 日曜の列
+const SATURDAY_BG = '#eaf1fb';   // 土曜の列
+
 /**
  * 在目前這個（新的）試算表裡建立「本月」與「下個月」的排班分頁，
  * 版面與既有試算表一致：
@@ -583,8 +589,7 @@ function applyMonthSheetOverflow_(months) {
  * ---------------------------------------------------------- */
 
 const MIRROR_PROTECT_DESC = '跨月的欄位（下個月分頁的鏡像）';
-const MIRROR_BG = '#efefef';
-const MIRROR_FONT = '#666666';
+const MIRROR_FONT = '#666666';   // 鏡像だと分かる唯一の見た目（背景は休日の色を優先）
 
 /**
  * 月末が週の途中で終わる分頁に、翌月の「日曜まで」の欄を足す。
@@ -671,17 +676,26 @@ function ensureMonthSheetOverflow_(sheet, year, month) {
   sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
     .setFormulas(formulas);
 
-  // --- 見た目：触るところではないと分かるように灰色 ---
+  // --- 見た目 ---
   const lastRow = STAFF_START_ROW + roster.length - 1;
   sheet.getRange(1, firstCol, 2, overflowDays)
     .setFontWeight('bold')
-    .setBackground('#f0ece1')
+    .setBackground(HEADER_BG)
     .setHorizontalAlignment('center');
   sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
-    .setBackground(MIRROR_BG)
     .setFontColor(MIRROR_FONT)
     .setHorizontalAlignment('center')
     .setWrap(true);
+
+  // 背景は本来の日付欄と**同じ規則**（日曜＝桃色、土曜＝水色、平日＝無色）。
+  // 鏡像だという合図を背景の灰色に持たせると、跨月の 11/1 が休日なのに
+  // 休日の色で出ず、店長が週末を一目で拾えなくなる。合図は文字色と
+  // 註解・保護に任せる。
+  for (let i = 0; i < overflowDays; i++) {
+    const w = new Date(year, month, i + 1).getDay();
+    sheet.getRange(STAFF_START_ROW, firstCol + i, roster.length, 1)
+      .setBackground(w === 0 ? SUNDAY_BG : w === 6 ? SATURDAY_BG : null);
+  }
   for (let c = firstCol; c < firstCol + overflowDays; c++) sheet.setColumnWidth(c, 62);
 
   sheet.getRange(1, firstCol, 1, overflowDays)
@@ -847,7 +861,7 @@ function createMonthSheet_(ss, year, month) {
   const lastRow = STAFF_START_ROW + Math.max(staff.length, 1) - 1;
   sheet.getRange(1, 1, 2, lastCol)
     .setFontWeight('bold')
-    .setBackground('#f0ece1')
+    .setBackground(HEADER_BG)
     .setHorizontalAlignment('center');
   sheet.getRange(1, ROLE_COL, 2, EMAIL_COL).setHorizontalAlignment('left');
   sheet.getRange(1, 1, lastRow, lastCol)
@@ -862,10 +876,10 @@ function createMonthSheet_(ss, year, month) {
     const w = new Date(year, month - 1, i + 1).getDay();
     if (w === 0 || w === 6) {
       sheet.getRange(1, firstDataCol + i, lastRow, 1)
-        .setBackground(w === 0 ? '#fdeaea' : '#eaf1fb');
+        .setBackground(w === 0 ? SUNDAY_BG : SATURDAY_BG);
     }
   }
-  sheet.getRange(1, firstDataCol, 2, daysInMonth).setBackground('#f0ece1');
+  sheet.getRange(1, firstDataCol, 2, daysInMonth).setBackground(HEADER_BG);
 
   sheet.setColumnWidth(ROLE_COL, 88);
   sheet.setColumnWidth(NAME_COL, 92);

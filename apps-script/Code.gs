@@ -50,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-22 auto-month-sheet';
+const CODE_VERSION = '2026-10-22 cross-month-columns';
 
 /* ============================================================
  * Script Properties
@@ -438,9 +438,17 @@ function setupNewSpreadsheet() {
     ss.deleteSheet(blank);
   }
 
-  const msg = created.length
+  // 本月が週の途中で終わるなら、本月の分頁に翌月ぶんの欄を足す
+  const overflow = applyMonthSheetOverflow_([
+    { year: now.getFullYear(), month: now.getMonth() + 1 },
+  ]);
+
+  const lines = [created.length
     ? '已建立分頁：' + created.join('、')
-    : '分頁都已存在，沒有新增任何東西。';
+    : '分頁都已存在，沒有新增任何東西。'];
+  if (overflow.length) lines.push('跨月的欄位：' + overflow.join(' / '));
+
+  const msg = lines.join('\n');
   Logger.log(msg);
   return msg;
 }
@@ -499,7 +507,16 @@ function addNextMonthSheet() {
   const now = new Date();
   const d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const name = createMonthSheet_(ss_(), d.getFullYear(), d.getMonth() + 1);
-  const msg = name ? '已建立分頁：' + name : '分頁已存在，未變更。';
+
+  // 翌月の分頁ができたので、本月の分頁に跨月の欄を足せるようになった
+  const overflow = applyMonthSheetOverflow_([
+    { year: now.getFullYear(), month: now.getMonth() + 1 },
+  ]);
+
+  const lines = [name ? '已建立分頁：' + name : '分頁已存在，未變更。'];
+  if (overflow.length) lines.push('跨月的欄位：' + overflow.join(' / '));
+
+  const msg = lines.join('\n');
   Logger.log(msg);
   if (name) notifyMonthSheetCreated_([name]);
   return msg;
@@ -523,19 +540,167 @@ function ensureUpcomingMonthSheets() {
   const ss = ss_();
   const now = new Date();
   const created = [];
+  const months = [];
 
   [0, 1].forEach(function (offset) {
     const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const name = createMonthSheet_(ss, d.getFullYear(), d.getMonth() + 1);
     if (name) created.push(name);
+    months.push({ year: d.getFullYear(), month: d.getMonth() + 1 });
   });
 
-  const msg = created.length
+  // 跨月の欄は「翌月の分頁が在る」ことが前提なので、分頁を作り終えてから。
+  const overflow = applyMonthSheetOverflow_(months);
+
+  const lines = [created.length
     ? '已建立分頁：' + created.join('、')
-    : '分頁都已存在，未變更。';
+    : '分頁都已存在，未變更。'];
+  if (overflow.length) lines.push('跨月的欄位：' + overflow.join(' / '));
+
+  const msg = lines.join('\n');
   Logger.log(msg);
   if (created.length) notifyMonthSheetCreated_(created);
   return msg;
+}
+
+/**
+ * 指定した月の分頁に跨月の欄を足す。足した分の説明（ログ用）を返す。
+ * [{year, month}, ...] を渡す。
+ */
+function applyMonthSheetOverflow_(months) {
+  const out = [];
+  months.forEach(function (m) {
+    const sheet = monthSheet_(m.year, m.month);
+    if (!sheet) return;
+    const labels = ensureMonthSheetOverflow_(sheet, m.year, m.month);
+    if (labels.length) out.push(sheet.getName() + ' ← ' + labels.join('、'));
+  });
+  return out;
+}
+
+/* ------------------------------------------------------------
+ * 跨月の欄（月末が週の途中で終わる月の、翌月ぶんの写し）
+ * ---------------------------------------------------------- */
+
+const MIRROR_PROTECT_DESC = '跨月的欄位（下個月分頁的鏡像）';
+const MIRROR_BG = '#efefef';
+const MIRROR_FONT = '#666666';
+
+/**
+ * 月末が週の途中で終わる分頁に、翌月の「日曜まで」の欄を足す。
+ *
+ * この店の一週間は月〜日。10/31 が土曜だと、その週（10/26〜11/1）の
+ * 最後の 11/1 だけが 11月の分頁に飛んでしまい、店長が 10月の分頁を見ても
+ * 週が閉じない。そこで 10月の分頁の末尾に 11/1 の欄を足す。
+ *
+ * **中身は数式で 11月の分頁を写すだけ**（書き込み先は従来どおり 11月の
+ * 分頁ひとつ）。値を二か所に書くとズレるし、アプリの読み書きを足さずに
+ * 済ませたいので、鏡像にした。
+ *
+ * ヘッダーは数字ではなく「11/1」という**文字列**にするのが要点：
+ *   ・dayColumn_ は Number(ヘッダー) === 日 で探すので、この欄は
+ *     locateDate_ から絶対に引っかからない（書き込み先が増えない）
+ *   ・monthHoursData_ も Number(ヘッダー) が日付でない欄を飛ばすので、
+ *     11/1 の時間が 10月の工時に混ざらない
+ * もしここを数字の 1 にすると、10/1 が二重計上されるうえ 11/1 の時間まで
+ * 10月に乗る。絶対に数字にしないこと。
+ *
+ * 毎週実行される前提の冪等な処理。人員が増えていれば数式を伸ばし、
+ * 誰かが上書きしてしまった欄も元の鏡像に戻す。
+ *
+ * @return 足した日付ラベルの配列（何もしなかったときは []）
+ */
+function ensureMonthSheetOverflow_(sheet, year, month) {
+  if (!sheet) return [];
+
+  // 12月は翌年の分頁（＝別の試算表）が要るので対象外。monthSheet_ は年を
+  // 見ずに「1月排班班表」を探すため、ここで止めないと**今年の 1月**の
+  // 分頁を写してしまう（11 か月前の班表が 12月の末尾に出る）。
+  if (month === 12) {
+    Logger.log('跨月的欄位：12月はスキップ（翌年の分頁は別の試算表）');
+    return [];
+  }
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const lastDow = new Date(year, month - 1, daysInMonth).getDay();
+  if (lastDow === 0) return [];        // 日曜で終わる月は、そこで週が閉じている
+
+  const next = monthSheet_(year, month + 1);
+  if (!next) return [];                // 翌月の分頁がまだ無い。次の週にまた来る
+
+  const roster = getRoster_(sheet);
+  if (!roster.length) return [];
+
+  const nextRows = {};
+  getRoster_(next).forEach(function (p) { nextRows[p.name] = p.row; });
+
+  // 月末の翌日から日曜まで（月末が土曜なら 1 日、月曜なら 6 日）
+  const overflowDays = 7 - lastDow;
+  const firstCol = EMAIL_COL + daysInMonth + 1;
+  const nextName = String(next.getName()).replace(/'/g, "''");
+
+  const labels = [];
+  const dows = [];
+  for (let i = 0; i < overflowDays; i++) {
+    const d = new Date(year, month, i + 1);     // month は 1 始まりなので翌月の 1 日から
+    labels.push((d.getMonth() + 1) + '/' + d.getDate());
+    dows.push(DOW_ZH_GS[d.getDay()]);
+  }
+
+  // --- ヘッダー（1 列目＝日付ラベル、2 列目＝星期）---
+  // 「11/1」は放っておくと試算表が**日付として解釈**してしまい、
+  // ロケール次第で「2026/11/01」や「11月1日」に化けて 62px の欄に収まらない。
+  // 先に書式を「純文字」(@) にして、文字列のまま置く。
+  const headerRange = sheet.getRange(1, firstCol, 1, overflowDays);
+  headerRange.setNumberFormat('@');
+  headerRange.setValues([labels]);
+  sheet.getRange(2, firstCol, 1, overflowDays).setValues([dows]);
+
+  // --- 本体：翌月の分頁の「同じ人・同じ日」を指す数式 ---
+  // 行は名前で引き直す。月の途中で人を増やすと行がずれるので、
+  // 同じ行番号を当てにすると他人の班別を表示してしまう。
+  const formulas = roster.map(function (person) {
+    return labels.map(function (label, i) {
+      const col = dayColumn_(next, i + 1);
+      const row = nextRows[person.name];
+      if (col === -1 || !row) return '';
+      const ref = "'" + nextName + "'!" + next.getRange(row, col).getA1Notation();
+      return '=IF(' + ref + '="","",' + ref + ')';
+    });
+  });
+  sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
+    .setFormulas(formulas);
+
+  // --- 見た目：触るところではないと分かるように灰色 ---
+  const lastRow = STAFF_START_ROW + roster.length - 1;
+  sheet.getRange(1, firstCol, 2, overflowDays)
+    .setFontWeight('bold')
+    .setBackground('#f0ece1')
+    .setHorizontalAlignment('center');
+  sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
+    .setBackground(MIRROR_BG)
+    .setFontColor(MIRROR_FONT)
+    .setHorizontalAlignment('center')
+    .setWrap(true);
+  for (let c = firstCol; c < firstCol + overflowDays; c++) sheet.setColumnWidth(c, 62);
+
+  sheet.getRange(1, firstCol, 1, overflowDays)
+    .setNote('這一欄是「' + next.getName() + '」的鏡像（跨月的那一週）。\n' +
+      '要改請到那個分頁改，這裡填的東西會在下次自動整理時被蓋掉。');
+
+  // --- 警告だけの保護（編集は止めないが「写しだぞ」と気づける）---
+  // 毎週付け直すので、前回ぶんは消してから 1 つだけ作る。
+  sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(function (pr) {
+    if (pr.getDescription() === MIRROR_PROTECT_DESC) pr.remove();
+  });
+  sheet.getRange(1, firstCol, lastRow, overflowDays).protect()
+    .setDescription(MIRROR_PROTECT_DESC)
+    .setWarningOnly(true);
+
+  // 第 1 列が伸びたので、dayColumn_ のヘッダー快取を捨てる
+  delete __headerCache[sheet.getName()];
+
+  return labels;
 }
 
 /**

@@ -11,6 +11,8 @@
  * 設定步驟（部署前，三個函式都要各跑一次）：
  * 1. 在試算表開啟 Extensions > Apps Script，貼上這份程式碼（取代預設內容）。
  * 2. 執行 setupNewSpreadsheet()：建立本月與下個月的排班分頁。
+ *    接著執行 installMonthSheetTrigger() 一次，之後每週一會自動補分頁
+ *    （漏掉這一步，月底就會變成「下個月的分頁不存在，員工選不到」）。
  * 3. 執行 setupProperties()：寫入下列三個 Script Properties
  *    （漏跑這一步的話，所有 API 都會回 server_missing_client_id）：
  *    - API_TOKEN        簡易共享密鑰（擋隨機亂打）
@@ -48,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-18 join-code-bind';
+const CODE_VERSION = '2026-10-22 auto-month-sheet';
 
 /* ============================================================
  * Script Properties
@@ -304,17 +306,28 @@ function allMonthSheets_() {
  * 1 年ぶんしか無いという前提で、monthSheet_ の探索順とも揃う。
  */
 function availableMonths_() {
-  const now = new Date();
   const seen = {};
   allMonthSheets_().forEach(function (sh) {
-    const m = String(sh.getName()).match(/^(?:(\d{2,3})\s*\/\s*)?(\d{1,2})\s*月排班班表\s*$/);
-    if (!m) return;
-    const month = Number(m[2]);
-    if (month < 1 || month > 12) return;
-    const year = m[1] ? Number(m[1]) + 1911 : now.getFullYear();
-    seen[year + '-' + pad2_(month)] = true;
+    const ym = parseMonthSheetName_(sh.getName());
+    if (ym) seen[ym.year + '-' + pad2_(ym.month)] = true;
   });
   return Object.keys(seen).sort().reverse();
+}
+
+/**
+ * 分頁名を {year, month} に解く。排班分頁でなければ null。
+ * 年が書いていないほう（「9月排班班表」）は今年として扱う
+ * —— availableMonths_ / monthSheet_ の探索順と揃えた前提。
+ */
+function parseMonthSheetName_(name) {
+  const m = String(name).match(/^(?:(\d{2,3})\s*\/\s*)?(\d{1,2})\s*月排班班表\s*$/);
+  if (!m) return null;
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  return {
+    year: m[1] ? Number(m[1]) + 1911 : new Date().getFullYear(),
+    month: month,
+  };
 }
 
 /** 員工名單的「主分頁」：優先用本月，否則用第一個有資料的排班分頁 */
@@ -365,14 +378,35 @@ const SETUP_STAFF = [
  * 而且 Email 欄被清空 —— 全體員工會突然變成「尚未綁定」。
  */
 function rosterForNewSheet_() {
-  const src = rosterSheet_();
-  if (src) {
-    const roster = getRoster_(src);
+  const sources = [monthSheet_(new Date().getFullYear(), new Date().getMonth() + 1)]
+    .concat(monthSheetsNewestFirst_());
+
+  for (let i = 0; i < sources.length; i++) {
+    if (!sources[i]) continue;
+    const roster = getRoster_(sources[i]);
     if (roster.length) {
       return roster.map(function (p) { return [p.role, p.name, p.email]; });
     }
   }
   return SETUP_STAFF.map(function (r) { return [r[0], r[1], '']; });
+}
+
+/**
+ * 排班分頁を「新しい月が先」に並べる。
+ *
+ * rosterSheet_ の fallback は「分頁の並び順で最初に見つかった分頁」なので、
+ * 本月分頁がまだ無い瞬間（月初や自動生成の取りこぼし）に走ると 1月の
+ * 古い名簿と Email をコピーしてしまい、全員が「尚未綁定」に戻る。
+ * 新しい分頁を作るときは必ず**最新の**名簿を種にしたいので、こちらを使う。
+ */
+function monthSheetsNewestFirst_() {
+  return allMonthSheets_()
+    .map(function (sh) {
+      const ym = parseMonthSheetName_(sh.getName());
+      return { sheet: sh, key: ym ? ym.year * 100 + ym.month : -1 };
+    })
+    .sort(function (a, b) { return b.key - a.key; })
+    .map(function (x) { return x.sheet; });
 }
 
 const DOW_ZH_GS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -432,6 +466,10 @@ function whichSpreadsheet() {
     ? monthSheets.map(function (s) { return s.getName(); }).join('、')
     : '（一個都沒有！請先執行 setupNewSpreadsheet）'));
 
+  lines.push('自動補分頁　：' + (monthSheetTriggerInstalled_()
+    ? '已設定（每週一）'
+    : '（未設定！請執行 installMonthSheetTrigger）'));
+
   const rs = monthSheets.length ? rosterSheet_() : null;
   if (rs) {
     const roster = getRoster_(rs);
@@ -452,14 +490,130 @@ function whichSpreadsheet() {
   return out;
 }
 
-/** 補建「下個月」的分頁（每個月底跑一次） */
+/**
+ * 補建「下個月」的分頁（手動で 1 か月だけ足したいときに使う）。
+ * 通常は installMonthSheetTrigger() が入れた週次觸發器が
+ * ensureUpcomingMonthSheets() を走らせるので、手で呼ぶ必要はない。
+ */
 function addNextMonthSheet() {
   const now = new Date();
   const d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const name = createMonthSheet_(ss_(), d.getFullYear(), d.getMonth() + 1);
   const msg = name ? '已建立分頁：' + name : '分頁已存在，未變更。';
   Logger.log(msg);
+  if (name) notifyMonthSheetCreated_([name]);
   return msg;
+}
+
+/* ------------------------------------------------------------
+ * 月份分頁の自動生成（週次の時間驅動觸發器）
+ * ---------------------------------------------------------- */
+
+const MONTH_SHEET_TRIGGER_HANDLER = 'ensureUpcomingMonthSheets';
+
+/**
+ * 「本月」と「下個月」の分頁を揃える。觸發器のハンドラ。
+ *
+ * createMonthSheet_ は同名分頁があれば null を返して何もしないので、
+ * 何度走らせても安全（＝冪等）。週に 1 回まわしておけば、月をまたぐ週が
+ * 来たときに「下個月の分頁がまだ無くて従業員がその日を選べない」
+ * （API は sheet_or_date_not_found）が起きない。
+ */
+function ensureUpcomingMonthSheets() {
+  const ss = ss_();
+  const now = new Date();
+  const created = [];
+
+  [0, 1].forEach(function (offset) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const name = createMonthSheet_(ss, d.getFullYear(), d.getMonth() + 1);
+    if (name) created.push(name);
+  });
+
+  const msg = created.length
+    ? '已建立分頁：' + created.join('、')
+    : '分頁都已存在，未變更。';
+  Logger.log(msg);
+  if (created.length) notifyMonthSheetCreated_(created);
+  return msg;
+}
+
+/**
+ * 新しい分頁ができたことを店主の個人 LINE に伝える。
+ *
+ * 觸發器は黙って動くので、放っておくと「本当に走っているのか」が
+ * 誰にも分からない。分頁ができた月だけ 1 通飛ばせば、動いていることと
+ * 名簿が引き継がれた人数が同時に確認できる。
+ * 未連結・送信失敗は実行紀錄に残すだけで、分頁の生成は巻き戻さない。
+ *
+ * 連結は `sheetUrl_`（`#gid=...`）で**できたその分頁が直接開く**ようにする。
+ * 試算表のトップだと前の月のタブが開くので、人員異動を直すときに
+ * 新しいタブを自分で探す手間が残ってしまう。
+ */
+function notifyMonthSheetCreated_(names) {
+  if (!isSet_(adminNotifyUserId_())) {
+    Logger.log('月份分頁の通知はスキップ：店主の LINE が未連結');
+    return { ok: false, error: 'admin_line_not_linked' };
+  }
+
+  const first = ss_().getSheetByName(names[0]);
+  const people = first ? getRoster_(first).length : 0;
+
+  const text = [
+    '🗓️ 已自動建立排班分頁：' + names.join('、'),
+    '名單沿用上一個月（' + people + ' 人），員工現在就可以選這些月份的班。',
+    '有人員異動的話，請直接在新分頁的 A／B 欄調整。',
+    first ? '👉 ' + sheetUrl_(first) : '',
+  ].filter(Boolean).join('\n');
+
+  const sent = pushToAdmin_(text);
+  if (!sent.ok) {
+    Logger.log('月份分頁の通知が送れなかった：' + sent.error + ' ' + (sent.detail || ''));
+  }
+  return sent;
+}
+
+/**
+ * 週次觸發器を仕掛ける。**エディタでこれを 1 回実行すれば設定は終わり**
+ * （何度実行しても觸發器は 1 本に保たれる）。
+ *
+ * 月 1 回（onMonthDay）にしていないのは、Apps Script の觸發器は失敗や
+ * スキップが起こり得るのに、月 1 だとその月が丸ごと落ちて誰も気づかない
+ * から。週 1 なら取りこぼしが翌週に自動で治り、金曜の催繳提醒より前に
+ * 必ず 1 回通る。分頁がもう在るときは何もしないので、空振りのコストは
+ * ほぼゼロ。時刻はこの指令碼の時區（appsscript.json の timeZone）。
+ */
+function installMonthSheetTrigger() {
+  removeMonthSheetTrigger();
+  ScriptApp.newTrigger(MONTH_SHEET_TRIGGER_HANDLER)
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.MONDAY)
+    .atHour(4)
+    .create();
+
+  const msg = '已建立觸發器：每週一 4 時台執行 ' + MONTH_SHEET_TRIGGER_HANDLER;
+  Logger.log(msg);
+  return msg;
+}
+
+/** 上の觸發器を外す（自動生成を止めたいときだけ） */
+function removeMonthSheetTrigger() {
+  let removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === MONTH_SHEET_TRIGGER_HANDLER) {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  if (removed) Logger.log('已刪除舊觸發器：' + removed + ' 個');
+  return removed;
+}
+
+/** 月份分頁の自動生成觸發器が仕掛かっているか（診斷用） */
+function monthSheetTriggerInstalled_() {
+  return ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === MONTH_SHEET_TRIGGER_HANDLER;
+  });
 }
 
 /**

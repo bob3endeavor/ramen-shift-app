@@ -50,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-22 cross-month-holiday-color';
+const CODE_VERSION = '2026-10-22 cross-month-header-style';
 
 /* ============================================================
  * Script Properties
@@ -592,6 +592,26 @@ const MIRROR_PROTECT_DESC = '跨月的欄位（下個月分頁的鏡像）';
 const MIRROR_FONT = '#666666';   // 鏡像だと分かる唯一の見た目（背景は休日の色を優先）
 
 /**
+ * 跨月の見出しの書式を、同じ分頁の「同じ曜日」の日付欄から持ってくるための
+ * 列番号。見つからなければ -1。
+ *
+ * @param nextMonthDay 翌月の何日ぶんの欄か（1 = 翌月 1 日）
+ *
+ * 月末に近いほう（最後に現れる同じ曜日）から探す。隣の週と同じ見た目に
+ * なるのが自然なので。
+ */
+function sameWeekdayHeaderCol_(sheet, year, month, nextMonthDay) {
+  const target = new Date(year, month, nextMonthDay).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+  for (let d = daysInMonth; d >= 1; d--) {
+    if (new Date(year, month - 1, d).getDay() !== target) continue;
+    const col = dayColumn_(sheet, d);
+    if (col !== -1) return col;
+  }
+  return -1;
+}
+
+/**
  * 月末が週の途中で終わる分頁に、翌月の「日曜まで」の欄を足す。
  *
  * この店の一週間は月〜日。10/31 が土曜だと、その週（10/26〜11/1）の
@@ -652,13 +672,33 @@ function ensureMonthSheetOverflow_(sheet, year, month) {
     dows.push(DOW_ZH_GS[d.getDay()]);
   }
 
-  // --- ヘッダー（1 列目＝日付ラベル、2 列目＝星期）---
+  // --- ヘッダー（1 行目＝日付ラベル、2 行目＝星期）---
+  // 見出しの色は**同じ曜日の既存の見出しから書式を複製**する。実際の分頁は
+  // 店長が手で色を付けているので、ここで固定色を塗ると「他の休日と同じ色」
+  // にならない。複製なら手で変えてあっても勝手に追従するし、色の値を
+  // コードに増やさずに済む。
+  for (let i = 0; i < overflowDays; i++) {
+    const src = sameWeekdayHeaderCol_(sheet, year, month, i + 1);
+    if (src !== -1) {
+      sheet.getRange(1, src, 2, 1)
+        .copyTo(sheet.getRange(1, firstCol + i, 2, 1), { formatOnly: true });
+    } else {
+      // 同じ曜日が一つも無い月は無い（どの曜日も月に 4 回は来る）ので
+      // ここに来るのは分頁の見出しが壊れているときだけ。既定の色で置く。
+      sheet.getRange(1, firstCol + i, 2, 1)
+        .setFontWeight('bold')
+        .setBackground(HEADER_BG)
+        .setHorizontalAlignment('center');
+    }
+  }
+
   // 「11/1」は放っておくと試算表が**日付として解釈**してしまい、
   // ロケール次第で「2026/11/01」や「11月1日」に化けて 62px の欄に収まらない。
-  // 先に書式を「純文字」(@) にして、文字列のまま置く。
-  const headerRange = sheet.getRange(1, firstCol, 1, overflowDays);
-  headerRange.setNumberFormat('@');
-  headerRange.setValues([labels]);
+  // 複製してきた書式を「純文字」(@) で上書きしてから、文字列のまま置く。
+  // （書式を後から変えても、入っている文字列が数値に化けることはない）
+  const labelRange = sheet.getRange(1, firstCol, 1, overflowDays);
+  labelRange.setNumberFormat('@');
+  labelRange.setValues([labels]);
   sheet.getRange(2, firstCol, 1, overflowDays).setValues([dows]);
 
   // --- 本体：翌月の分頁の「同じ人・同じ日」を指す数式 ---
@@ -676,12 +716,8 @@ function ensureMonthSheetOverflow_(sheet, year, month) {
   sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
     .setFormulas(formulas);
 
-  // --- 見た目 ---
+  // --- 見た目（見出しの 1〜2 行目は上で複製済みなので触らない）---
   const lastRow = STAFF_START_ROW + roster.length - 1;
-  sheet.getRange(1, firstCol, 2, overflowDays)
-    .setFontWeight('bold')
-    .setBackground(HEADER_BG)
-    .setHorizontalAlignment('center');
   sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
     .setFontColor(MIRROR_FONT)
     .setHorizontalAlignment('center')

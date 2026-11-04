@@ -48,7 +48,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-18 join-code-bind';
+const CODE_VERSION = '2026-11-04 confirmed-week';
 
 /* ============================================================
  * Script Properties
@@ -2183,6 +2183,7 @@ function doGet(e) {
     if (action === 'whoami') return handleWhoami_(who);
     if (action === 'getWeek') return handleGetWeek_(who, p);
     if (action === 'getMonthHours') return handleGetMonthHours_(who, p);
+    if (action === 'getConfirmedWeek') return handleGetConfirmedWeek_(who, p);
     if (action === 'getAdminRoster') return handleGetAdminRoster_(who);
     if (action === 'getReminderConfig') return handleGetReminderConfig_(who);
     if (action === 'startLineLink') return handleStartLineLink_(who, p);
@@ -2215,6 +2216,11 @@ function handleBootstrap_(who, p) {
   const dates = String(p.dates || '')
     .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
   if (dates.length) out.week = employeeWeekData_(who, dates);
+
+  // 「今週のシフト（確定）」。thisDates が付いているときだけ同梱する
+  const thisDates = String(p.thisDates || '')
+    .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (thisDates.length) out.confirmed = confirmedWeekData_(thisDates);
 
   out.month = monthHoursData_(who, {});
   return jsonOut_(out);
@@ -2401,6 +2407,108 @@ function employeeWeekData_(who, dates) {
     roster: roster,
     errors: errors,
   };
+}
+
+/* ============================================================
+ * 確定シフト（セルの背景色で判定）
+ * ------------------------------------------------------------
+ * 店長が試算表のセルに色を付けたら「確定」。
+ *   灰色        … 排休（確定した休み）
+ *   黄色 / 緑   … 確定（どちらも同じ扱い）
+ *   色なし(白)  … 未確定。員工には見せない
+ * 色は別に保存せず、読むたびにセルから判定する。だから急な変更も
+ * 試算表の色を付け替えるだけで次の読み込みから反映される。
+ * ========================================================== */
+
+/** '#rrggbb' → 'off' | 'confirmed' | ''（未確定） */
+function cellColorStatus_(hex) {
+  const m = String(hex || '').trim().toLowerCase().match(/^#([0-9a-f]{6})$/);
+  if (!m) return '';
+  const r = parseInt(m[1].slice(0, 2), 16) / 255;
+  const g = parseInt(m[1].slice(2, 4), 16) / 255;
+  const b = parseInt(m[1].slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (l >= 0.97) return '';                       // 白（色なし）
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (sat < 0.12) return 'off';                   // 灰色
+  let h;
+  if (d === 0) h = 0;
+  else if (max === r) h = 60 * (((g - b) / d + 6) % 6);
+  else if (max === g) h = 60 * ((b - r) / d + 2);
+  else h = 60 * ((r - g) / d + 4);
+  // 黄色〜黄緑〜緑（パレットの濃淡の差を吸収するため範囲で見る）
+  if (h >= 38 && h <= 170) return 'confirmed';
+  return '';                                      // それ以外の色は未確定扱い
+}
+
+function handleGetConfirmedWeek_(who, p) {
+  if (who.role !== 'employee') return jsonOut_({ ok: false, error: 'employee_only' });
+  const dates = String(p.dates || '')
+    .split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  if (!dates.length) return jsonOut_({ ok: false, error: 'missing dates' });
+  return jsonOut_(confirmedWeekData_(dates));
+}
+
+/**
+ * 指定した日付の「確定済みセルだけ」を返す。
+ * data[date][name] = { status:'off'|'confirmed', text } 。未確定のセルは含めない。
+ * 返すのは姓名・職稱・班別だけ（Email は含まない）。
+ */
+function confirmedWeekData_(dates) {
+  const data = {};
+  const errors = {};
+  const roster = [];
+  const seen = {};
+
+  // 同じ分頁の日付はまとめて 1 回で読む（一週間は列が連続しているので）
+  const bySheet = {};
+  dates.forEach(function (dateStr) {
+    data[dateStr] = {};
+    const loc = locateDate_(dateStr);
+    if (!loc) { errors[dateStr] = 'sheet_or_date_not_found'; return; }
+    const key = loc.sheet.getName();
+    if (!bySheet[key]) bySheet[key] = { sheet: loc.sheet, items: [] };
+    bySheet[key].items.push({ dateStr: dateStr, col: loc.col });
+  });
+
+  Object.keys(bySheet).forEach(function (key) {
+    const sheet = bySheet[key].sheet;
+    const items = bySheet[key].items;
+    const people = getRoster_(sheet);
+    if (!people.length) return;
+
+    const cols = items.map(function (it) { return it.col; });
+    const minCol = Math.min.apply(null, cols);
+    const maxCol = Math.max.apply(null, cols);
+    const range = sheet.getRange(STAFF_START_ROW, minCol, people.length, maxCol - minCol + 1);
+    const values = range.getDisplayValues();
+    const colors = range.getBackgrounds();
+
+    people.forEach(function (person, i) {
+      if (!seen[person.name]) {
+        seen[person.name] = true;
+        roster.push({ name: person.name, role: person.role });
+      }
+      items.forEach(function (it) {
+        const c = it.col - minCol;
+        const status = cellColorStatus_(colors[i][c]);
+        if (!status) return;
+        const raw = values[i][c];
+        if (status === 'off') {
+          data[it.dateStr][person.name] = { status: 'off', text: '休' };
+          return;
+        }
+        const shift = parseShiftCell_(raw);
+        // 時間として読めない文字（「公休」など）は、そのまま見せる
+        const text = shift ? (shift.off ? '休' : shift.text) : String(raw || '').trim();
+        data[it.dateStr][person.name] = { status: shift && shift.off ? 'off' : 'confirmed', text: text };
+      });
+    });
+  });
+
+  return { ok: true, roster: roster, data: data, errors: errors };
 }
 
 /**

@@ -35,6 +35,9 @@
     signingIn: false,  // 登入流程進行中（避免重複觸發）
     isAdmin: false,    // 管理員兼員工（店長）のとき true
     canOpenAdmin: false,  // LIFF 版で管理頁への導線を出すか（権限ではない）
+    thisDays: [],      // 7 Date objects: this week's Mon..Sun
+    confirmed: null,   // {roster, data:{date:{name:{status,text}}}}  本週の確定シフト（色付きセルのみ）
+    confirmedError: '',
     preload: null,     // bootstrap で 1 回にまとめて届いた週/月のデータ
   };
 
@@ -52,6 +55,9 @@
     const d = new Date(nextMonday);
     d.setDate(nextMonday.getDate() + i);
     state.days.push(d);
+    const t = new Date(thisMonday);
+    t.setDate(thisMonday.getDate() + i);
+    state.thisDays.push(t);
   }
 
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
@@ -269,7 +275,10 @@
    * bootstrap を知らない後端に当たったら従来の whoami に落とす。
    */
   async function fetchBootstrap() {
-    const res = await Auth.get('bootstrap', { dates: state.days.map(ymd).join(',') });
+    const res = await Auth.get('bootstrap', {
+      dates: state.days.map(ymd).join(','),
+      thisDates: state.thisDays.map(ymd).join(','),
+    });
     if (res.ok) {
       Auth.setProfile(res.who);
       return res;
@@ -286,7 +295,7 @@
     const boot = await fetchBootstrap();
     const who = boot.who;
     // 1 回で届いたぶんは enterApp で再取得しない
-    state.preload = boot.legacy ? null : { week: boot.week, month: boot.month };
+    state.preload = boot.legacy ? null : { week: boot.week, month: boot.month, confirmed: boot.confirmed };
     setAuthBusy(false);
     if (!who.ok) {
       // LIFF 版には戻る先のログイン画面が無いので、バナーで再試行させる
@@ -425,7 +434,7 @@
       state.lineLoginReady = !!boot.who.lineLoginReady;
       state.lineLinked = !!boot.who.lineLinked;
       state.canOpenAdmin = !!boot.who.canOpenAdmin;
-      state.preload = boot.legacy ? null : { week: boot.week, month: boot.month };
+      state.preload = boot.legacy ? null : { week: boot.week, month: boot.month, confirmed: boot.confirmed };
     }
 
     await enterApp();
@@ -473,6 +482,8 @@
     // bootstrap で既に届いているなら、ここでの往復は要らない
     const pre = state.preload;
     state.preload = null;
+    if (pre && pre.confirmed) applyConfirmed(pre.confirmed);
+    else loadConfirmed();
     if (pre && pre.week) {
       applyWeek(pre.week);
       renderAll();
@@ -657,6 +668,108 @@
     showBanner('ok', '已套用上週的 ' + done + ' 天，確認後請按「送出班表」');
     setTimeout(hideBanner, 3200);
   });
+
+  /* ---------------- 本週班表（確定シフト・表示専用） ----------------
+   * 試算表のセルに色（灰＝排休／黄・緑＝確定）が付いたものだけが届く。
+   * 色なしの希望は後端が返さないので、ここでは出しようがない。
+   * 色は後端が読むたびに判定するので、店長が色を直せば次の読み込みで変わる。
+   */
+
+  function applyConfirmed(res) {
+    state.confirmed = res && res.ok ? res : null;
+    state.confirmedError = '';
+    renderThisWeek();
+  }
+
+  async function loadConfirmed() {
+    if (isDemoMode) {
+      const data = {};
+      state.thisDays.forEach(function (d, i) {
+        const key = ymd(d);
+        data[key] = {};
+        Object.keys(DEMO_PATTERNS).forEach(function (name) {
+          const v = parseServerValue(DEMO_PATTERNS[name][i]);
+          if (!v) return;
+          data[key][name] = v.off ? { status: 'off', text: '休' } : { status: 'confirmed', text: v.text };
+        });
+      });
+      state.confirmed = {
+        ok: true,
+        data: data,
+        roster: DEMO_STAFF.map(function (p) { return { name: p.name, role: p.role }; }),
+      };
+      renderThisWeek();
+      return;
+    }
+    const res = await Auth.get('getConfirmedWeek', { dates: state.thisDays.map(ymd).join(',') });
+    if (res.ok) { applyConfirmed(res); return; }
+    // 後端が未更新（貼り直し前）のときも、ここで静かに「読めない」と出すだけにする
+    state.confirmed = null;
+    state.confirmedError = Auth.describeError(res.error);
+    renderThisWeek();
+  }
+
+  function renderThisWeek() {
+    const table = $('thisWeekTable');
+    const wrap = $('thisWeekWrap');
+    const empty = $('thisWeekEmpty');
+    $('thisWeekRange').textContent = `${fmtMD(state.thisDays[0])}（一）〜 ${fmtMD(state.thisDays[6])}（日）`;
+    table.innerHTML = '';
+
+    function showMessage(text) {
+      wrap.style.display = 'none';
+      empty.style.display = 'block';
+      empty.textContent = text;
+    }
+
+    if (!state.confirmed) {
+      showMessage(state.confirmedError ? '⚠ 無法讀取本週班表：' + state.confirmedError : '讀取中…');
+      return;
+    }
+
+    const data = state.confirmed.data || {};
+    const keys = state.thisDays.map(ymd);
+    const entryOf = function (name, key) { return (data[key] || {})[name] || null; };
+    const hasAny = keys.some(function (k) { return Object.keys(data[k] || {}).length > 0; });
+    if (!hasAny) {
+      showMessage('本週的班表尚未確定');
+      return;
+    }
+    wrap.style.display = '';
+    empty.style.display = 'none';
+
+    const todayKey = ymd(today);
+    const head = document.createElement('tr');
+    head.innerHTML = '<th class="name-col">員工</th>' + state.thisDays.map(function (d) {
+      const w = d.getDay();
+      const cls = [w === 6 ? 'sat' : (w === 0 ? 'sun' : ''), ymd(d) === todayKey ? 'today' : ''].join(' ').trim();
+      return `<th class="${cls}">${fmtMD(d)}<br><span class="th-dow">${DOW_ZH[w]}</span></th>`;
+    }).join('');
+    table.appendChild(head);
+
+    // 自分を先頭に。確定したセルが 1 つもない同事は行ごと出さない
+    const myName = state.me.name;
+    const rows = (state.confirmed.roster || []).filter(function (p) {
+      return p.name === myName || keys.some(function (k) { return entryOf(p.name, k); });
+    });
+    rows.sort(function (a, b) { return (b.name === myName) - (a.name === myName); });
+
+    rows.forEach(function (person) {
+      const isMe = person.name === myName;
+      const tr = document.createElement('tr');
+      if (isMe) tr.className = 'me';
+      let cells = `<td class="name-col">${person.name}${isMe ? ' ←你' : ''}</td>`;
+      keys.forEach(function (k) {
+        const e = entryOf(person.name, k);
+        const today_ = k === todayKey ? ' today' : '';
+        if (!e) cells += `<td class="${today_.trim()}">　</td>`;
+        else if (e.status === 'off') cells += `<td class="off-confirmed${today_}">休</td>`;
+        else cells += `<td class="confirmed${today_}">${e.text}</td>`;
+      });
+      tr.innerHTML = cells;
+      table.appendChild(tr);
+    });
+  }
 
   /* ---------------- 讀取本週資料 ---------------- */
 

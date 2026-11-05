@@ -50,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-10-22 cross-month-header-style';
+const CODE_VERSION = '2026-10-28 tomorrow-shift-textv2';
 
 /* ============================================================
  * Script Properties
@@ -411,8 +411,8 @@ function monthSheetsNewestFirst_() {
 
 const DOW_ZH_GS = ['日', '一', '二', '三', '四', '五', '六'];
 
-// 分頁の色。跨月の鏡像欄も同じものを使う（「休日は同じ色」を保つため、
-// 定数を共有する。片方だけ直すと色がズレる）
+// 分頁の色（当月の日付欄ぶん）。跨月の鏡像欄はここを使わない
+// （見出しだけ赤、データ行は無色。MIRROR_HEADER_BG のほうを見ること）
 const HEADER_BG = '#f0ece1';     // 1〜2 列目（見出しと星期）
 const SUNDAY_BG = '#fdeaea';     // 日曜の列
 const SATURDAY_BG = '#eaf1fb';   // 土曜の列
@@ -589,27 +589,14 @@ function applyMonthSheetOverflow_(months) {
  * ---------------------------------------------------------- */
 
 const MIRROR_PROTECT_DESC = '跨月的欄位（下個月分頁的鏡像）';
-const MIRROR_FONT = '#666666';   // 鏡像だと分かる唯一の見た目（背景は休日の色を優先）
+const MIRROR_FONT = '#666666';   // 鏡像のデータ行の文字色（こちらは背景を付けない）
 
-/**
- * 跨月の見出しの書式を、同じ分頁の「同じ曜日」の日付欄から持ってくるための
- * 列番号。見つからなければ -1。
- *
- * @param nextMonthDay 翌月の何日ぶんの欄か（1 = 翌月 1 日）
- *
- * 月末に近いほう（最後に現れる同じ曜日）から探す。隣の週と同じ見た目に
- * なるのが自然なので。
- */
-function sameWeekdayHeaderCol_(sheet, year, month, nextMonthDay) {
-  const target = new Date(year, month, nextMonthDay).getDay();
-  const daysInMonth = new Date(year, month, 0).getDate();
-  for (let d = daysInMonth; d >= 1; d--) {
-    if (new Date(year, month - 1, d).getDay() !== target) continue;
-    const col = dayColumn_(sheet, d);
-    if (col !== -1) return col;
-  }
-  return -1;
-}
+// 跨月の欄は**見出しの 1〜2 行目だけ赤**にする（店長の指定）。
+// 「ここから先は来月ぶん」の境目が、見出しを読まなくても一目で分かる。
+// データ行に休日の色を続けると赤の下に桃色が並び、どこまでが鏡像なのか
+// 分からなくなるので、3 行目から下は無色のままにする。
+const MIRROR_HEADER_BG = '#c7402c';    // 前端の --chili と同じ赤
+const MIRROR_HEADER_FONT = '#f7f1e3';  // 同 --paper。黒字だと赤地で読みづらい
 
 /**
  * 月末が週の途中で終わる分頁に、翌月の「日曜まで」の欄を足す。
@@ -673,29 +660,17 @@ function ensureMonthSheetOverflow_(sheet, year, month) {
   }
 
   // --- ヘッダー（1 行目＝日付ラベル、2 行目＝星期）---
-  // 見出しの色は**同じ曜日の既存の見出しから書式を複製**する。実際の分頁は
-  // 店長が手で色を付けているので、ここで固定色を塗ると「他の休日と同じ色」
-  // にならない。複製なら手で変えてあっても勝手に追従するし、色の値を
-  // コードに増やさずに済む。
-  for (let i = 0; i < overflowDays; i++) {
-    const src = sameWeekdayHeaderCol_(sheet, year, month, i + 1);
-    if (src !== -1) {
-      sheet.getRange(1, src, 2, 1)
-        .copyTo(sheet.getRange(1, firstCol + i, 2, 1), { formatOnly: true });
-    } else {
-      // 同じ曜日が一つも無い月は無い（どの曜日も月に 4 回は来る）ので
-      // ここに来るのは分頁の見出しが壊れているときだけ。既定の色で置く。
-      sheet.getRange(1, firstCol + i, 2, 1)
-        .setFontWeight('bold')
-        .setBackground(HEADER_BG)
-        .setHorizontalAlignment('center');
-    }
-  }
+  // この 2 行だけ赤く塗る。毎週走る冪等な処理なので、以前の版が隣の欄から
+  // 複製してきた書式（文字色や罫線）が残らないよう、毎回明示的に置き直す。
+  sheet.getRange(1, firstCol, 2, overflowDays)
+    .setBackground(MIRROR_HEADER_BG)
+    .setFontColor(MIRROR_HEADER_FONT)
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center');
 
   // 「11/1」は放っておくと試算表が**日付として解釈**してしまい、
   // ロケール次第で「2026/11/01」や「11月1日」に化けて 62px の欄に収まらない。
-  // 複製してきた書式を「純文字」(@) で上書きしてから、文字列のまま置く。
-  // （書式を後から変えても、入っている文字列が数値に化けることはない）
+  // 先に数値書式を「純文字」(@) にしてから、文字列のまま置く。
   const labelRange = sheet.getRange(1, firstCol, 1, overflowDays);
   labelRange.setNumberFormat('@');
   labelRange.setValues([labels]);
@@ -716,22 +691,15 @@ function ensureMonthSheetOverflow_(sheet, year, month) {
   sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
     .setFormulas(formulas);
 
-  // --- 見た目（見出しの 1〜2 行目は上で複製済みなので触らない）---
+  // --- 見た目（見出しの 1〜2 行目は上で塗ったので、ここでは触らない）---
   const lastRow = STAFF_START_ROW + roster.length - 1;
   sheet.getRange(STAFF_START_ROW, firstCol, roster.length, overflowDays)
     .setFontColor(MIRROR_FONT)
     .setHorizontalAlignment('center')
-    .setWrap(true);
-
-  // 背景は本来の日付欄と**同じ規則**（日曜＝桃色、土曜＝水色、平日＝無色）。
-  // 鏡像だという合図を背景の灰色に持たせると、跨月の 11/1 が休日なのに
-  // 休日の色で出ず、店長が週末を一目で拾えなくなる。合図は文字色と
-  // 註解・保護に任せる。
-  for (let i = 0; i < overflowDays; i++) {
-    const w = new Date(year, month, i + 1).getDay();
-    sheet.getRange(STAFF_START_ROW, firstCol + i, roster.length, 1)
-      .setBackground(w === 0 ? SUNDAY_BG : w === 6 ? SATURDAY_BG : null);
-  }
+    .setWrap(true)
+    // データ行は無色。以前は休日の色（桃・水色）を塗っていたので、
+    // null を毎回出して消しておかないと古い色が残ったままになる。
+    .setBackground(null);
   for (let c = firstCol; c < firstCol + overflowDays; c++) sheet.setColumnWidth(c, 62);
 
   sheet.getRange(1, firstCol, 1, overflowDays)
@@ -1169,17 +1137,21 @@ function round1_(n) { return Math.round(n * 10) / 10; }
  *
  * 需要的 Script Properties：
  *   LINE_CHANNEL_ACCESS_TOKEN  LINE Developers 的長期 Channel access token
- *   LINE_TARGET_ID             要發送的群組 ID（由 Webhook 自動填入）
+ *   LINE_TARGET_ID             群組 ID（第一次把官方帳號拉進群組時自動填入）
  *   LINE_WEBHOOK_KEY           Webhook 網址的密鑰（?line=...）
  *   REMIND_ENABLED / REMIND_WEEKDAY / REMIND_HOUR   排程（管理頁可改）
  *   APP_URL                    員工填寫頁的網址（訊息裡附連結用，可留空）
  *
- * 群組 ID 與「誰是誰」的對照都靠 Webhook 蒐集：把
+ * 群組 ID 靠 Webhook 蒐集：把
  *   {網頁應用程式網址}?line={LINE_WEBHOOK_KEY}
- * 設成 LINE 頻道的 Webhook URL，再把官方帳號拉進群組，群組裡任何人打
- *   綁定          → 記住這個群組，並用 LINE 暱稱自動對應員工姓名
- *   綁定 李小華   → 指定自己是名單上的哪一位（暱稱對不上時用這個）
- * 對照表存在試算表的「LINE綁定」分頁，之後 @提及（mention）就靠它。
+ * 設成 LINE 頻道的 Webhook URL，再把官方帳號拉進群組就會記住那個群組。
+ * **記住之後不會被別的群組覆蓋**（rememberGroup_）。要換群組的話，
+ * 店長先執行一次 resetTargetGroup()。
+ *
+ * 「誰是誰」的對照表存在試算表的「LINE綁定」分頁，@提及（mention）靠它。
+ * 寫入這張表的唯一入口是 LIFF 的綁定畫面（linkLineAccount_，要綁定碼）。
+ * 在聊天室打「綁定」只會收到操作說明 —— 以前那裡能直接寫入，
+ * 等於繞過綁定碼，所以拿掉了（詳見 handleLineBindGuide_）。
  * ========================================================== */
 
 const LINE_PUSH_URL = 'https://api.line.me/v2/bot/message/push';
@@ -1479,6 +1451,149 @@ function buildReminderPreview_(result, remindable) {
   return '下週（' + range + '）未填完：' + result.targets.length + ' 人\n' + lines.join('\n');
 }
 
+/* ------------------------------------------------------------
+ * 「@明天上班」への返信（群組で誰かが訊いたときの一日ぶんの班表）
+ * ---------------------------------------------------------- */
+
+/** 「10/29（三）」。曜日は班表の見出しと同じ漢字一文字 */
+function dayLabel_(dateStr) {
+  return mdLabel_(dateStr) + '（' + DOW_ZH_GS[parseISO_(dateStr).getDay()] + '）';
+}
+
+/**
+ * 試算表のタイムゾーンでの「明日」を YYYY-MM-DD で返す。
+ *
+ * 一度 tz で今日の日付文字列にしてから数字で 1 日足す。Date に 24 時間を
+ * 加える書き方はタイムゾーンによってずれるので使わない（台北に夏時間は
+ * 無いが、時差の扱いを日付計算に持ち込まないほうが読みやすい）。
+ */
+function tomorrowISO_() {
+  const tz = ss_().getSpreadsheetTimeZone() || 'Asia/Taipei';
+  const parts = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd').split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2] + 1);   // 月末・年末は Date が繰り上げる
+  return d.getFullYear() + '-' + pad2_(d.getMonth() + 1) + '-' + pad2_(d.getDate());
+}
+
+/**
+ * ある一日の出勤者を、開始時刻の早い順で返す。
+ *
+ * 戻り値：
+ *   null … その日の分頁か日付欄が見つからない（まだ班表を作っていない）
+ *   []   … 分頁はあるが出勤者が居ない（全員排休、または未記入）
+ *
+ * 排休・空白・時刻として読めない記入は落とす。LINE を一切知らないので、
+ * 返信の文面とは独立に確かめられる。
+ */
+function dayShiftList_(dateStr) {
+  const loc = locateDate_(dateStr);
+  if (!loc) return null;
+
+  const roster = getRoster_(loc.sheet);
+  if (!roster.length) return [];
+
+  const colValues = loc.sheet
+    .getRange(STAFF_START_ROW, loc.col, roster.length, 1)
+    .getDisplayValues();
+
+  const list = [];
+  roster.forEach(function (person, i) {
+    const shift = parseShiftCell_(colValues[i][0]);
+    if (!shift || shift.off) return;
+    list.push({ name: person.name, role: person.role, start: shift.start, end: shift.end });
+  });
+
+  // 開始 → 終了の順。同じ時段は名簿の並びのまま（V8 の sort は安定）
+  list.sort(function (a, b) {
+    if (a.start !== b.start) return a.start < b.start ? -1 : 1;
+    if (a.end !== b.end) return a.end < b.end ? -1 : 1;
+    return 0;
+  });
+  return list;
+}
+
+/** mention は 1 通あたり 20 人まで。溢れたぶんは姓名だけで出す */
+const DAY_SHIFT_MENTION_LIMIT = 20;
+
+/**
+ * textV2 の本文で「{」はプレースホルダーの開始記号なので、リテラルとして
+ * 出したいときは「{{」に重ねる。姓名に波括弧が入ることはまず無いが、
+ * 入ったときに 400 で全部落ちるより読める形で出したい。
+ */
+function escapeTextV2_(s) { return String(s).replace(/\{/g, '{{'); }
+
+/**
+ * 一日ぶんの班表を LINE の message オブジェクトに組む。
+ *
+ * **型は textV2**。送信側でメンションできるのは textV2 だけで、v1 の text に
+ * mention を載せても LINE は黙って捨てる（200 が返り、本文だけ配信される。
+ * 2026-10-28 に「@姓名 が文字列として出るだけ」という形で踏んだ）。
+ * textV2 は本文の {キー} を substitution で置き換える方式なので、
+ * index / length の計算は要らない。
+ *
+ * 綁定済みの人はメンションにする。**LINE 側は暱稱で描画する**ので、班表の
+ * 姓名は出ない。未綁定の人は班表の姓名をそのまま書く。
+ *
+ * API を一切呼ばないので、testTomorrowShiftMessage() で送信せずに中身を
+ * 確かめられる。
+ */
+function buildDayShiftMessage_(dateStr, list, userIdMap) {
+  const label = dayLabel_(dateStr);
+
+  // メンションを含まないので、こちらは v1 の text でよい
+  if (list === null) return { type: 'text', text: '🍜 ' + label + '的班表還沒建立喔。' };
+  if (!list.length) return { type: 'text', text: '🍜 ' + label + '沒有人上班（或還沒排）。' };
+
+  const map = userIdMap || {};
+  const substitution = {};
+  const lines = ['🍜 ' + escapeTextV2_(label) + '上班的人', ''];
+
+  list.forEach(function (p, i) {
+    const userId = map[p.name] || '';
+    let shown = escapeTextV2_(p.name);
+
+    if (userId && Object.keys(substitution).length < DAY_SHIFT_MENTION_LIMIT) {
+      // キーは ^[a-zA-Z0-9_]{1,20}$ しか通らないので、姓名ではなく連番を使う
+      const key = 'm' + i;
+      substitution[key] = { type: 'mention', mentionee: { type: 'user', userId: userId } };
+      shown = '{' + key + '}';
+    }
+    lines.push(p.start + '-' + p.end + '　' + shown);
+  });
+
+  const message = { type: 'textV2', text: lines.join('\n') };
+  // 本文の {キー} と substitution は 1 対 1 でないと 400 になる。
+  // 綁定済みが 0 人なら {キー} も無いので、substitution 自体を付けない。
+  if (Object.keys(substitution).length) message.substitution = substitution;
+  return message;
+}
+
+/** 連打と、LINE が同じイベントを再送したときの二重返信を抑える長さ */
+const DAY_SHIFT_COOLDOWN_SEC = 30;
+
+/** 返信してよければ true を返し、同時に次の 30 秒ぶんの札を立てる */
+function takeDayShiftCooldown_(groupId) {
+  const cache = CacheService.getScriptCache();
+  const key = 'dayshift:' + groupId;
+  if (cache.get(key)) return false;
+  cache.put(key, '1', DAY_SHIFT_COOLDOWN_SEC);
+  return true;
+}
+
+/**
+ * 送らずに「@明天上班 に返す本文」をログへ出す（店主・開発者の確認用）。
+ * Apps Script のエディタからこれを実行して、中身を見てから実機で試す。
+ */
+function testTomorrowShiftMessage() {
+  const dateStr = tomorrowISO_();
+  const list = dayShiftList_(dateStr);
+  const message = buildDayShiftMessage_(dateStr, list, lineUserIdMap_());
+
+  Logger.log('明日の日付（試算表のタイムゾーン基準）: ' + dateStr);
+  Logger.log('出勤者: ' + (list === null ? '班表が見つからない' : list.length + ' 人'));
+  Logger.log('送る本文（{mN} は LINE 側で暱稱のメンションに置き換わる）:\n' + message.text);
+  Logger.log('実際に送る JSON:\n' + JSON.stringify(message, null, 2));
+  return message;
+}
 
 /* ------------------------------------------------------------
  * LINE API
@@ -1516,12 +1631,20 @@ function linePush_(messages) {
   return lineApi_(LINE_PUSH_URL, { to: to, messages: messages });
 }
 
-function lineReply_(replyToken, text) {
+/**
+ * 組み立て済みの message オブジェクトで返信する。
+ * mention 付きのように text 以外のフィールドが要るものはこちらを使う。
+ */
+function lineReplyMessage_(replyToken, message) {
   if (!replyToken) return { ok: false, error: 'missing_reply_token' };
   return lineApi_(LINE_REPLY_URL, {
     replyToken: replyToken,
-    messages: [{ type: 'text', text: text }],
+    messages: [message],
   });
+}
+
+function lineReply_(replyToken, text) {
+  return lineReplyMessage_(replyToken, { type: 'text', text: text });
 }
 
 /* ------------------------------------------------------------
@@ -1759,16 +1882,28 @@ function handleLineWebhook_(e, body) {
   return textOut_('ok');   // 検証リクエスト（events 空）にも 200 を返す
 }
 
+/** 「@明天上班」。@ 無しの「明天上班」には反応しない（雑談への誤反応を避ける） */
+const TOMORROW_CMD_RE = /^[@＠]明天上班/;
+
 function handleLineEvent_(ev) {
   const source = (ev && ev.source) || {};
 
   if (ev.type === 'join' && source.type === 'group') {
-    rememberGroup_(source.groupId);
+    if (!rememberGroup_(source.groupId)) {
+      // 既に別の群組を登録済み。ここでは何もしないことを伝えて、
+      // 店長が「招いたのに動かない」と悩まないようにする。
+      lineReply_(ev.replyToken, [
+        '謝謝邀請，但這個官方帳號已經綁定在另一個群組了，',
+        '在這裡不會回覆班表的訊息。',
+        '要改成這個群組的話，請找店長重新設定。',
+      ].join('\n'));
+      return;
+    }
     lineReply_(ev.replyToken, [
-      '謝謝邀請！以後忘記填希望排班的人，我會在這個群組提醒。',
+      '謝謝邀請！以後忘記填希望排班的人，我會私訊提醒。',
       '',
-      '想被 @ 點名的話，請在這個群組傳「綁定」兩個字。',
-      'LINE 暱稱跟班表姓名不一樣的話，請傳「綁定 李小華」這樣加上姓名。',
+      '在這個群組傳「@明天上班」，我會回覆明天上班的人和時段。',
+      '想被 @ 點名的話，請從官方帳號的選單打開班表完成綁定。',
     ].join('\n'));
     return;
   }
@@ -1781,62 +1916,95 @@ function handleLineEvent_(ev) {
   if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
 
   const text = String(ev.message.text || '').trim();
-  // 台湾の店舗なので案内は「綁定」に統一。連結/連携 などは旧案内を見た人や
-  // 日本語入力の人のための別名（先に長いものを並べて部分一致を防ぐ）。
-  const cmd = text.match(/^(綁定|連結|連携|連攜|link)/i);
-  if (!cmd) return;   // それ以外の雑談には一切反応しない
 
-  if (source.type === 'group') rememberGroup_(source.groupId);
-
-  const userId = source.userId;
-  if (!userId) {
-    lineReply_(ev.replyToken, '抱歉，讀不到你的帳號資訊，請稍後再試一次。');
+  if (TOMORROW_CMD_RE.test(text)) {
+    handleTomorrowShiftCommand_(ev, source);
     return;
   }
 
-  // 「綁定 李小華」「綁定李小華」「綁定：李小華」どれでも姓名を取り出せるように、
-  // 合図の直後にある区切り記号（全角スペース・コロン・読点など）を落とす
-  const rest = text.slice(cmd[0].length).replace(/^[\s:：,，、。.\-－—]+/, '').trim();
-  const displayName = lineDisplayName_(source.groupId, userId);
-  const rosterSheet = rosterSheet_();
-  const names = rosterSheet ? getRoster_(rosterSheet).map(function (p) { return p.name; }) : [];
-
-  let matched = '';
-  if (rest) {
-    matched = names.indexOf(rest) !== -1 ? rest : '';
-    if (!matched) {
-      lineReply_(ev.replyToken, '班表上找不到「' + rest + '」這個姓名。\n請照班表上的姓名，傳「綁定 李小華」這樣的格式。');
-      return;
-    }
-  } else {
-    matched = names.find(function (n) { return n === displayName; })
-      || names.find(function (n) { return displayName && displayName.indexOf(n) !== -1; })
-      || '';
+  // 台湾の店舗なので案内は「綁定」に統一。連結/連携 などは旧案内を見た人や
+  // 日本語入力の人のための別名（先に長いものを並べて部分一致を防ぐ）。
+  if (/^(綁定|連結|連携|連攜|link)/i.test(text)) {
+    handleLineBindGuide_(ev, source);
+    return;
   }
 
-  // 先に押さえた人が居たら奪わせない（LIFF 経路の name_already_linked と同じ）。
-  // グループに居るのは店長が招いたメンバーだけなので綁定碼までは要求しないが、
-  // 同僚の綁定を上書きできる状態にはしておかない。
-  if (matched) {
-    const taken = readLineLinks_().some(function (l) {
-      return l.name === matched && l.userId !== userId;
-    });
-    if (taken) {
-      lineReply_(ev.replyToken, '「' + matched + '」已經有人綁定了。\n如果那是你自己的舊帳號，請找店長幫你解除舊的綁定。');
-      return;
-    }
-  }
-
-  saveLineLink_(userId, displayName, matched);
-
-  lineReply_(ev.replyToken, matched
-    ? '已經把你設定為「' + matched + '」。以後還沒填班表的時候會直接 @ 你。'
-    : '你的 LINE 暱稱「' + (displayName || '?') + '」跟班表上的姓名對不起來。\n請照班表上的姓名，傳「綁定 李小華」這樣再試一次。');
+  // それ以外の雑談には一切反応しない
 }
 
+/**
+ * 「@明天上班」への返信。登録済みの群組にだけ、明日の出勤者を返す。
+ *
+ * 個人 DM と他の群組には無反応。班表には全員の実名と時段が載っているので、
+ * 店の群組の外には出さない。
+ */
+function handleTomorrowShiftCommand_(ev, source) {
+  if (source.type !== 'group') return;
+
+  if (!isSet_(lineTargetId_())) {
+    // まだどの群組も記録されていない。ここで記録してしまうと、よその群組が
+    // 先に名乗り出るだけで班表を引けてしまうので、記録は招待（join）に任せる。
+    lineReply_(ev.replyToken,
+      '這個群組還沒登記，所以還查不到班表。\n請店長把官方帳號重新邀請一次。');
+    return;
+  }
+  // 別の群組には何も言わない（どの群組が登記されているかも伏せる）
+  if (source.groupId !== lineTargetId_()) return;
+  if (!takeDayShiftCooldown_(source.groupId)) return;
+
+  const dateStr = tomorrowISO_();
+  const list = dayShiftList_(dateStr);
+  lineReplyMessage_(ev.replyToken, buildDayShiftMessage_(dateStr, list, lineUserIdMap_()));
+}
+
+/**
+ * 「綁定」と打たれたときの案内。**ここでは綁定しない。**
+ *
+ * 以前はこの場で姓名と userId を対照表へ直接書いていたが、その経路は
+ * 綁定碼（JOIN_CODE）を一度も見なかった。おかげで公式帳號に話しかけられる
+ * 人なら誰でも、未綁定の同僚の姓名を名乗って、その人の希望排班を書き換え、
+ * 全員の姓名と時段を読めた（LIFF 経路は 2026-10-18 の 28e9cd9 で塞いだのに、
+ * こちらが開いたままだった）。綁定の窓口は綁定碼を要求する LIFF 1 本に寄せる。
+ *
+ * 綁定碼をチャットで打たせる案は採らない。群組に平文で残ってしまう。
+ */
+function handleLineBindGuide_(ev, source) {
+  if (source.type === 'group') rememberGroup_(source.groupId);
+
+  const lines = [
+    '綁定請從官方帳號的選單打開班表，照畫面輸入「班表上的姓名」和店長給的綁定碼。',
+    '（在聊天室打字沒辦法綁定；綁定碼也請不要貼在群組裡。）',
+  ];
+  const url = liffUrl_() || appUrl_();
+  if (isSet_(url)) lines.push('👉 ' + url);
+  lineReply_(ev.replyToken, lines.join('\n'));
+}
+
+/**
+ * 通知と班表の宛先になる群組を覚える。**一度覚えたら上書きしない。**
+ *
+ * 以前は来た群組で無条件に上書きしていた。そのため公式帳號を自分の群組に
+ * 招いて話しかけるだけで、店の群組を乗っ取れた（宛先が差し替わる）。
+ * 張り替えるときは店長が resetTargetGroup() を 1 回実行する。
+ *
+ * @return この群組が登録先なら true（＝班表を出してよい相手）
+ */
 function rememberGroup_(groupId) {
-  if (!groupId) return;
-  if (lineTargetId_() !== groupId) props_().setProperty('LINE_TARGET_ID', groupId);
+  if (!groupId) return false;
+  if (!isSet_(lineTargetId_())) {
+    props_().setProperty('LINE_TARGET_ID', groupId);
+    return true;
+  }
+  return lineTargetId_() === groupId;
+}
+
+/**
+ * 登録済みの群組を忘れる（店長がエディタから 1 回実行する）。
+ * 実行したあと、新しい群組に官方帳號を招き直せばそこが登録される。
+ */
+function resetTargetGroup() {
+  props_().setProperty('LINE_TARGET_ID', LINE_UNSET);
+  Logger.log('LINE_TARGET_ID を未設定に戻した。新しい群組に官方帳號を招き直してください。');
 }
 
 /** 群組成員の表示名。取れなければ空文字（@提及 の可否には影響しない） */
@@ -1916,7 +2084,7 @@ function handleSetReminderConfig_(who, body) {
   if (!(hour >= 0 && hour <= 23)) return jsonOut_({ ok: false, error: 'bad_hour' });
 
   const enabled = !!body.enabled;
-  // 個別 DM になったので群組は必須ではない（群組は「綁定」コマンド用に残る）。
+  // 個別 DM になったので群組は必須ではない（群組は「@明天上班」用に残る）。
   // 必要なのはトークンだけ。
   if (enabled && !isSet_(lineToken_())) return jsonOut_({ ok: false, error: 'line_token_missing' });
 
@@ -1935,8 +2103,9 @@ function handleSendReminderTest_(who, body) {
 /* ============================================================
  * LINE Login で「員工 ↔ LINE userId」を確定させる
  * ------------------------------------------------------------
- * 群組で「綁定 姓名」と打ってもらう方式は、LINE の表示名と班表の姓名が
- * 違う人に自分の姓名を正しく入力させる必要があった。こちらは
+ * 群組で「綁定 姓名」と打ってもらう方式（2026-10-28 に撤去）は、LINE の
+ * 表示名と班表の姓名が違う人に自分の姓名を正しく入力させる必要があり、
+ * しかも綁定碼を確かめられなかった。こちらは
  *
  *   すでに Google ログイン済み（＝後端が姓名を知っている）本人が
  *   ボタンを押して LINE Login するだけ
@@ -3240,6 +3409,67 @@ function selfTest() {
     peekJwtClaims_('a.' + Utilities.base64EncodeWebSafe(
       Utilities.newBlob('hello').getBytes()
     ).replace(/=+$/, '') + '.c').ok, false);
+
+  // --- 「@明天上班」の合図（@ が無いものには反応しない）
+  eq('半角の @ に反応する', TOMORROW_CMD_RE.test('@明天上班'), true);
+  eq('全角の ＠ にも反応する', TOMORROW_CMD_RE.test('＠明天上班'), true);
+  eq('後ろに字が続いても反応する', TOMORROW_CMD_RE.test('@明天上班？'), true);
+  eq('@ が無ければ反応しない', TOMORROW_CMD_RE.test('明天上班'), false);
+  eq('文中に埋もれていたら反応しない', TOMORROW_CMD_RE.test('我看@明天上班'), false);
+
+  // --- 一日ぶんの班表の本文（試算表も LINE も触らない）
+  eq('日付のラベルは曜日つき', dayLabel_('2026-10-29'), '10/29（四）');
+
+  // 本文の {キー} と substitution の対応が崩れると LINE が 400 を返す。
+  // この 2 つが 1 対 1 であることを本文から数えて確かめる。
+  function checkSubstitution(label, message) {
+    const keysInText = (message.text.match(/\{[a-zA-Z0-9_]{1,20}\}/g) || [])
+      .map(function (s) { return s.slice(1, -1); });
+    const keysInMap = Object.keys(message.substitution || {});
+    eq(label + '：本文の {キー} と substitution の件数が合う', keysInText.length, keysInMap.length);
+    eq(label + '：本文の {キー} が全部 substitution にある',
+      keysInText.every(function (k) { return keysInMap.indexOf(k) !== -1; }), true);
+    eq(label + '：キーは LINE の許す文字だけ',
+      keysInMap.every(function (k) { return /^[a-zA-Z0-9_]{1,20}$/.test(k); }), true);
+    eq(label + '：20 件を超えない', keysInMap.length <= DAY_SHIFT_MENTION_LIMIT, true);
+  }
+
+  const dayMsg = buildDayShiftMessage_('2026-10-29', [
+    { name: '李小華', role: '', start: '11:00', end: '15:00' },
+    { name: '王大明', role: '', start: '11:00', end: '21:30' },
+  ], { '李小華': 'U00000000000000000000000000000001' });
+  // v1 の text に mention を載せても LINE は黙って捨てる。型が textV2 であることが前提
+  eq('型は textV2', dayMsg.type, 'textV2');
+  eq('綁定済みの人だけメンションになる', Object.keys(dayMsg.substitution).length, 1);
+  eq('メンションは mention/mentionee の形',
+    JSON.stringify(dayMsg.substitution.m0),
+    JSON.stringify({ type: 'mention', mentionee: { type: 'user', userId: 'U00000000000000000000000000000001' } }));
+  eq('綁定済みの人の姓名は本文に出ない（LINE が暱稱で描く）',
+    dayMsg.text.indexOf('李小華'), -1);
+  eq('未綁定の人は姓名をそのまま書く', dayMsg.text.indexOf('王大明') !== -1, true);
+  eq('時段も書く', dayMsg.text.indexOf('11:00-15:00') !== -1, true);
+  checkSubstitution('綁定が 1 人', dayMsg);
+
+  // 綁定済みが 0 人なら {キー} が無いので substitution も付けない
+  const noMention = buildDayShiftMessage_('2026-10-29', [
+    { name: '王大明', role: '', start: '11:00', end: '21:30' },
+  ], {});
+  eq('メンション対象が居なければ substitution を付けない', 'substitution' in noMention, false);
+  checkSubstitution('綁定が 0 人', noMention);
+
+  // 姓名に「{」が混ざっても本文が壊れない（{{ に重ねる）
+  const braced = buildDayShiftMessage_('2026-10-29', [
+    { name: '{王}', role: '', start: '11:00', end: '21:30' },
+  ], {});
+  eq('姓名の { は {{ にエスケープする', braced.text.indexOf('{{王}') !== -1, true);
+  checkSubstitution('姓名に波括弧', braced);
+
+  // メンションを含まない知らせは v1 の text のまま
+  const noSheet = buildDayShiftMessage_('2026-10-29', null, {});
+  eq('班表が無い日はそう返す', noSheet.text.indexOf('還沒建立') !== -1, true);
+  eq('班表が無い知らせは text 型', noSheet.type, 'text');
+  eq('出勤者ゼロの日はそう返す',
+    buildDayShiftMessage_('2026-10-29', [], {}).text.indexOf('沒有人上班') !== -1, true);
 
   const msg = fails.length
     ? '✗ ' + fails.length + ' / ' + checked + ' 項失敗\n' + fails.join('\n')

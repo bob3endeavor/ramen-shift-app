@@ -269,10 +269,13 @@ Webhook で**受け取る**側のプロパティで、送信側には存在し�
 
 `textV2` は本文の `{キー}` を `substitution` で置き換える方式なので、
 index / length の計算は不要。キーは `^[a-zA-Z0-9_]{1,20}$`、リテラルの
-<!-- GitHub Pages の Jekyll は front matter の無い .md も Liquid で処理するので、
-     波括弧 2 つを raw で囲む。囲まないと「Variable '{{' was not properly
-     terminated」でビルドが落ち、**前端の配信ごと止まる**（2026-11-05 に踏んだ）。
-     Liquid は Markdown より先に走るため、バッククォートでは守られない。 -->
+<!-- 次の行は Liquid 対策で raw で囲ってある。GitHub Pages の Jekyll は front
+     matter の無い .md もページとして Liquid で処理するので、波括弧を 2 つ
+     続けて書くと変数の開始と解釈され、「was not properly terminated」で
+     ビルドが落ちる。落ちるとサイト全体が配信されず、**前端の更新ごと
+     止まる**（2026-11-05 に踏んだ）。Liquid は Markdown より先に走るため、
+     バッククォートでも HTML コメントの中でも守られない。このコメント自身に
+     波括弧を 2 つ並べて書けないのも同じ理由。 -->
 {% raw %}`{` は `{{` にエスケープする{% endraw %}。
 
 LINE 側の制約（いずれも現状の実装と整合）：

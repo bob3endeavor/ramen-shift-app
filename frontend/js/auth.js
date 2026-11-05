@@ -42,6 +42,7 @@ const Auth = (function () {
     roster_sheet_not_found: '找不到排班分頁，請聯絡店長。',
     sheet_or_date_not_found: '試算表裡還沒有這個日期所屬的月份分頁。',
     end_before_start: '下班時間必須晚於上班時間。',
+    bad_time: '時間的格式不對（要像 10:30 這樣），請重新選一次。',
     busy_try_again: '系統忙碌中，請稍後再試一次。',
     // LINE 催繳提醒
     line_token_missing: '後端還沒設定 LINE 的 Channel access token。',

@@ -66,6 +66,16 @@
   function toMin(str) { const [h, m] = str.split(':').map(Number); return h * 60 + m; }
   function toStr(min) { const h = Math.floor(min / 60), m = min % 60; return pad(h) + ':' + pad(m); }
   function fmtMD(d) { return `${d.getMonth() + 1}/${d.getDate()}`; }
+  /**
+   * 試算表から来た文字をそのまま innerHTML に差し込まないための逃がし。
+   * セルの中身は時刻に読めなければ原文のまま届く仕様なので（「公休」など）、
+   * 誰かが班別の欄にタグを書けたら他の同事の画面で動いてしまう。
+   */
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
   function timeOptions(maxStr) {
     const arr = []; const max = toMin(maxStr);
     for (let t = toMin('10:30'); t <= max; t += 30) arr.push(toStr(t));
@@ -758,13 +768,13 @@
       const isMe = person.name === myName;
       const tr = document.createElement('tr');
       if (isMe) tr.className = 'me';
-      let cells = `<td class="name-col">${person.name}${isMe ? ' ←你' : ''}</td>`;
+      let cells = `<td class="name-col">${esc(person.name)}${isMe ? ' ←你' : ''}</td>`;
       keys.forEach(function (k) {
         const e = entryOf(person.name, k);
         const today_ = k === todayKey ? ' today' : '';
         if (!e) cells += `<td class="${today_.trim()}">　</td>`;
         else if (e.status === 'off') cells += `<td class="off-confirmed${today_}">休</td>`;
-        else cells += `<td class="confirmed${today_}">${e.text}</td>`;
+        else cells += `<td class="confirmed${today_}">${esc(e.text)}</td>`;
       });
       tr.innerHTML = cells;
       table.appendChild(tr);

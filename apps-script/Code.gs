@@ -50,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-11-05 confirmed-week + tomorrow-shift-textv2';
+const CODE_VERSION = '2026-11-05b confirmed-week + tomorrow-shift-textv2 + shift-time-guard';
 
 /* ============================================================
  * Script Properties
@@ -1116,6 +1116,12 @@ function normTime_(s) {
 function toMin_(s) {
   const parts = String(s).split(':').map(Number);
   return parts[0] * 60 + parts[1];
+}
+
+/** 'HH:MM'（00:00〜23:59）か。toMin_ は形を確かめずに NaN を返すので、その前に使う */
+function isHHMM_(s) {
+  const m = String(s == null ? '' : s).trim().match(/^(\d{1,2}):(\d{2})$/);
+  return !!m && Number(m[1]) <= 23 && Number(m[2]) <= 59;
 }
 
 /** 班別長度（分鐘）；排休/空白為 0 */
@@ -3435,6 +3441,13 @@ function handleSubmitShift_(who, body) {
     value = '排休\nday off';
   } else {
     if (!body.start || !body.end) return jsonOut_({ ok: false, error: 'missing start/end' });
+    // 時刻の形だけを通す。画面は必ず HH:MM を送ってくるが、ここは /exec に
+    // 直接叩かれる口なので形を確かめる。確かめずに連結していたので、
+    // 時刻でない文字がそのままセルに入り、それを原文で返す本週班表の経路から
+    // 他の同事の画面に流れていた（toMin_ は NaN を返し、下の比較を素通りする）。
+    if (!isHHMM_(body.start) || !isHHMM_(body.end)) {
+      return jsonOut_({ ok: false, error: 'bad_time' });
+    }
     if (toMin_(body.end) <= toMin_(body.start)) {
       return jsonOut_({ ok: false, error: 'end_before_start' });
     }
@@ -3578,6 +3591,18 @@ function selfTest() {
   eq('班表が無い知らせは text 型', noSheet.type, 'text');
   eq('出勤者ゼロの日はそう返す',
     buildDayShiftMessage_('2026-10-29', [], {}).text.indexOf('沒有人上班') !== -1, true);
+
+  // --- 班別の時刻の形（submitShift が試算表へ書く前に通す関門）
+  eq('HH:MM は通る', isHHMM_('10:30'), true);
+  eq('H:MM も通る', isHHMM_('9:05'), true);
+  eq('時が 24 以上は通さない', isHHMM_('24:00'), false);
+  eq('分が 60 以上は通さない', isHHMM_('10:60'), false);
+  eq('空は通さない', isHHMM_(''), false);
+  eq('null は通さない', isHHMM_(null), false);
+  // ここが素通りすると、時刻でない文字がセルに入り、本週班表の経路で
+  // 他の同事の画面にそのまま流れる
+  eq('タグは通さない', isHHMM_('<img src=x onerror=alert(1)>'), false);
+  eq('時刻の後ろにタグが続くものも通さない', isHHMM_('10:30<img src=x>'), false);
 
   const msg = fails.length
     ? '✗ ' + fails.length + ' / ' + checked + ' 項失敗\n' + fails.join('\n')

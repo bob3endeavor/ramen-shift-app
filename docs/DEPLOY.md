@@ -315,6 +315,48 @@ clasp deploy -d "說明文字"
 > 同樣的理由，**綁定碼 (`JOIN_CODE`) 絕對不要寫進 `config.js` 或程式碼**。
 > 它是由員工自己輸入的，所以只放在 Script Properties 才有意義。
 
+### C-1. 根目錄的 `.nojekyll`（不要刪）
+
+repo 根目錄有一個空檔案 `.nojekyll`。有它，GitHub Pages 就**不經過 Jekyll**、
+直接把檔案原樣發佈。
+
+刪掉它會怎樣：Jekyll 會把**沒有 front matter 的 `.md` 也當成頁面處理**，
+於是 `docs/` 裡面只要出現連續兩個左大括號（例如說明 `textV2` 的轉義規則時），
+Liquid 就會把它當成變數的開頭而**整站建置失敗**。
+
+失敗的代價不只是那一個 docs 檔：
+
+- **整個網站都不會更新**，Pages 繼續發舊版（前端的修正也到不了員工手上）
+- `git push` 本身是成功的，所以**本機完全看不出問題**，要去 GitHub 的
+  Actions 頁才知道
+
+2026-11-05 就是這樣白跑了兩個禮拜的更新。真的需要讓 Jekyll 處理的話，
+先把那些地方用 Liquid 的 **raw 標籤**（`raw` / `endraw`）包起來再刪。
+
+> 這份文件裡故意**不寫出** raw 標籤的完整寫法 —— 寫出來的話，這個檔案
+> 自己就成了下一顆地雷（而且 `npm run check` 會一直亮警告）。
+> 實際的寫法看 `docs/LINE-REMINDER.md` 裡 `textV2` 那一段。
+
+### C-2. push 之前：`npm run check`
+
+```bash
+npm run check
+```
+
+檢查兩件事：`.nojekyll` 還在，以及 `.md` / `.html` 裡沒有沒被 raw 標籤
+包起來的 Liquid 記號。有 `.nojekyll` 的時候第二項只會警告（因為實際上無害）；
+`.nojekyll` 不見了就會直接失敗。
+
+> **push 之後畫面沒變的話**，先確認 Pages 到底有沒有重新建置：
+> repo 的 Actions 分頁找「pages build and deployment」，或是直接看
+> 發佈出去的檔案的 `Last-Modified`：
+>
+> ```bash
+> curl -sI https://bob3endeavor.github.io/ramen-shift-app/frontend/liff-shift.html | grep -i last-modified
+> ```
+>
+> 日期還是舊的就表示建置失敗或還沒跑，**不是瀏覽器快取的問題**。
+
 ---
 
 ## D. 本機開發

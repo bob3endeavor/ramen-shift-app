@@ -26,7 +26,7 @@
     roster: [],      // [{name, role}]  (= 同事名單，矩陣的行)
     weekErrors: {},  // "YYYY-MM-DD" -> error code
     month: null,     // {hours, days, offDays, month, note, availableMonths}
-    ranking: null,   // {rows, myRank, staffCount, totalHours, throughDay, note}（本月時數排名。正職除外）
+    ranking: null,   // {rows, myRank, myExcludedReason, staffCount, totalHours, throughDay, note}（本月時數排名。正職除外）
     monthChoice: null,   // 左のプルダウンで見ている月 'YYYY-MM'
     monthStale: null,    // 後端が月指定に未対応だったとき、頼んだ月
     weekChoice: 'next',  // 右のプルダウン。'next' かその週の月曜 'YYYY-MM-DD'
@@ -1049,6 +1049,7 @@
       throughDay: today.getDate(),
       totalHours: Math.round((totalMinutes / 60) * 10) / 10,
       myRank: myRank,
+      myExcludedReason: myRank === null ? 'fulltime_excluded' : null,
       staffCount: outRows.length,
       rows: outRows,
     };
@@ -1081,8 +1082,13 @@
 
   async function loadRanking() {
     if (isDemoMode) { applyRanking(demoRanking()); return; }
+    const noteEl = $('rankNote');
+    if (noteEl) noteEl.textContent = '讀取中…';
     const res = await Auth.get('getMonthRanking', {});
-    if (!res.ok) return;
+    if (!res.ok) {
+      if (noteEl) noteEl.textContent = Auth.describeError(res.error);
+      return;
+    }
     applyRanking(res);
   }
 
@@ -1192,7 +1198,9 @@
     }).join('');
 
     if (r.myRank == null) {
-      noteEl.textContent = '你是正職，不列入這個排名';
+      noteEl.textContent = (r.myExcludedReason === 'staff_not_found_in_month_sheet')
+        ? '該月分頁找不到你的姓名'
+        : '你是正職，不列入這個排名';
     } else {
       noteEl.textContent = `你是 ${r.staffCount} 人中第 ${r.myRank} 名　全員合計 ${r.totalHours} 小時`;
     }

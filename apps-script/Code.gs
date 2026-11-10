@@ -3199,6 +3199,16 @@ function rankingPublicRow_(r, isMe) {
 }
 
 /**
+ * myRank が null になった理由。rows に出ない理由が「正職だから対象外」なのか
+ * 「名簿にそもそもいない（該月分頁に名前がない）」なのかで前端の文面が変わる
+ * ので区別する。allRows はフィルタ前（isTipShareStaff_ を通す前）の全員ぶん。
+ */
+function rankingExclusionReason_(allRows, who) {
+  const meRow = allRows.find(function (r) { return r.name === who.name; });
+  return meRow ? 'fulltime_excluded' : 'staff_not_found_in_month_sheet';
+}
+
+/**
  * 本月時數排名（チップ分配の検証用）。正職を除いた全員が対象。
  * monthMinutesByPerson_ を monthHoursData_ と共有しているので、
  * 自分の行の時數は「04 累計已上」の数字と必ず一致する。
@@ -3224,8 +3234,8 @@ function monthRankingData_(who, p) {
     return out;
   }
 
-  const minutesRows = monthMinutesByPerson_(sheet, win.today)
-    .filter(function (r) { return isTipShareStaff_(r.role); });
+  const allRows = monthMinutesByPerson_(sheet, win.today);
+  const minutesRows = allRows.filter(function (r) { return isTipShareStaff_(r.role); });
   const ranked = rankRows_(minutesRows);
 
   let totalMinutes = 0;
@@ -3237,6 +3247,10 @@ function monthRankingData_(who, p) {
   });
   out.staffCount = out.rows.length;
   out.totalHours = round1_(totalMinutes / 60);
+
+  if (out.myRank === null) {
+    out.myExcludedReason = rankingExclusionReason_(allRows, who);
+  }
 
   return out;
 }
@@ -3749,6 +3763,12 @@ function selfTest() {
     'email' in rankingPublicRow_(
       { name: '王', role: '', minutes: 60, days: 1, rank: 1, email: 'x@example.com' }, false),
     false);
+
+  const exclusionRows = [{ name: '山田太郎 TARO', role: '正職' }, { name: '陳小芳', role: 'PT' }];
+  eq('正職は自分がいても exclusion は fulltime',
+    rankingExclusionReason_(exclusionRows, { name: '山田太郎 TARO' }), 'fulltime_excluded');
+  eq('名簿に名前が無ければ exclusion は not_found',
+    rankingExclusionReason_(exclusionRows, { name: '該月分頁にいない人' }), 'staff_not_found_in_month_sheet');
 
   const msg = fails.length
     ? '✗ ' + fails.length + ' / ' + checked + ' 項失敗\n' + fails.join('\n')

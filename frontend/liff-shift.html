@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&family=DotGothic16&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261105">
+<link rel="stylesheet" href="css/style.css?v=20261110">
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
 /* LINE から開いた版だと app.js に伝える。Google 用のゲート画面を持たない
@@ -151,7 +151,7 @@ window.APP_AUTH_MODE = 'liff';
     </div>
 
     <!-- STEP 3: 工時試算 -->
-    <div class="section" style="margin-bottom:20px;">
+    <div class="section">
       <div class="section-title"><span class="num">04</span><h2>工時試算</h2></div>
       <div class="hours-grid">
         <div class="hours-card primary">
@@ -170,6 +170,18 @@ window.APP_AUTH_MODE = 'liff';
       <div class="note">
         時數依照試算表上「已寫入的班別」計算（排休不計）。本月只算到今天為止，
         已經過去的月份則是整個月。若該月分頁尚未建立，數字會顯示為 0。
+      </div>
+    </div>
+
+    <!-- STEP 4: 本月時數排名（チップ分配の検証用） -->
+    <div class="section" style="margin-bottom:20px;">
+      <div class="section-title"><span class="num">05</span><h2>本月時數排名</h2>
+        <span class="sub" id="rankSub"></span></div>
+      <div class="rank-list" id="rankList"></div>
+      <p class="rank-note" id="rankNote"></p>
+      <div class="note">
+        依照試算表上「已寫入的班別」計算（排休不計），只算到今天為止 —
+        與上面「累計已上」用的是同一份數字。小費依這個時數比例分配（正職不列入）。
       </div>
     </div>
   </div>
@@ -209,9 +221,9 @@ window.APP_AUTH_MODE = 'liff';
 
 <div class="stamp-toast" id="stampToast">已送出</div>
 
-<script src="js/config.js?v=20261105"></script>
-<script src="js/demo-data.js?v=20261105"></script>
-<script src="js/auth.js?v=20261105"></script>
-<script src="js/app.js?v=20261105"></script>
+<script src="js/config.js?v=20261110"></script>
+<script src="js/demo-data.js?v=20261110"></script>
+<script src="js/auth.js?v=20261110"></script>
+<script src="js/app.js?v=20261110"></script>
 </body>
 </html>

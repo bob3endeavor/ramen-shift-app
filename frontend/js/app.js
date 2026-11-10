@@ -26,6 +26,7 @@
     roster: [],      // [{name, role}]  (= 同事名單，矩陣的行)
     weekErrors: {},  // "YYYY-MM-DD" -> error code
     month: null,     // {hours, days, offDays, month, note, availableMonths}
+    ranking: null,   // {rows, myRank, staffCount, totalHours, throughDay, note}（本月時數排名。正職除外）
     monthChoice: null,   // 左のプルダウンで見ている月 'YYYY-MM'
     monthStale: null,    // 後端が月指定に未対応だったとき、頼んだ月
     weekChoice: 'next',  // 右のプルダウン。'next' かその週の月曜 'YYYY-MM-DD'
@@ -305,7 +306,7 @@
     const boot = await fetchBootstrap();
     const who = boot.who;
     // 1 回で届いたぶんは enterApp で再取得しない
-    state.preload = boot.legacy ? null : { week: boot.week, month: boot.month, confirmed: boot.confirmed };
+    state.preload = boot.legacy ? null : { week: boot.week, month: boot.month, confirmed: boot.confirmed, ranking: boot.ranking };
     setAuthBusy(false);
     if (!who.ok) {
       // LIFF 版には戻る先のログイン画面が無いので、バナーで再試行させる
@@ -444,7 +445,7 @@
       state.lineLoginReady = !!boot.who.lineLoginReady;
       state.lineLinked = !!boot.who.lineLinked;
       state.canOpenAdmin = !!boot.who.canOpenAdmin;
-      state.preload = boot.legacy ? null : { week: boot.week, month: boot.month, confirmed: boot.confirmed };
+      state.preload = boot.legacy ? null : { week: boot.week, month: boot.month, confirmed: boot.confirmed, ranking: boot.ranking };
     }
 
     await enterApp();
@@ -494,6 +495,9 @@
     state.preload = null;
     if (pre && pre.confirmed) applyConfirmed(pre.confirmed);
     else loadConfirmed();
+    if (pre && pre.ranking && pre.ranking.ok) applyRanking(pre.ranking);
+    else loadRanking();
+
     if (pre && pre.week) {
       applyWeek(pre.week);
       renderAll();
@@ -1009,6 +1013,47 @@
     };
   }
 
+  /**
+   * 示範模式用の「本月時數排名」。DEMO_STAFF から正職を除き、
+   * DEMO_MONTH_MINUTES を基準に姓名ごとに決まった値を作る（毎回同じ結果）。
+   * DEMO_ME は必ず DEMO_MONTH_MINUTES そのもの —— 04 のデモ数字と一致させるため。
+   */
+  function demoRanking() {
+    const rows = DEMO_STAFF
+      .filter(function (s) { return !String(s.role || '').includes('正職'); })
+      .map(function (s, i) {
+        const minutes = (s.name === DEMO_ME.name)
+          ? DEMO_MONTH_MINUTES
+          : Math.max(0, DEMO_MONTH_MINUTES - i * 480 + (i % 3) * 90);
+        return { name: s.name, role: s.role, minutes: minutes, days: Math.round(minutes / 240) };
+      })
+      .sort(function (a, b) { return b.minutes - a.minutes || (a.name < b.name ? -1 : 1); });
+
+    let rank = 0, prevMinutes = null, totalMinutes = 0, myRank = null;
+    const outRows = rows.map(function (r, i) {
+      if (prevMinutes === null || r.minutes !== prevMinutes) { rank = i + 1; prevMinutes = r.minutes; }
+      totalMinutes += r.minutes;
+      const isMe = r.name === DEMO_ME.name;
+      if (isMe) myRank = rank;
+      return {
+        name: r.name, role: r.role,
+        hours: Math.round((r.minutes / 60) * 10) / 10,
+        days: r.days, rank: rank, isMe: isMe,
+      };
+    });
+
+    return {
+      ok: true,
+      month: `${today.getFullYear()}-${pad(today.getMonth() + 1)}`,
+      isCurrentMonth: true,
+      throughDay: today.getDate(),
+      totalHours: Math.round((totalMinutes / 60) * 10) / 10,
+      myRank: myRank,
+      staffCount: outRows.length,
+      rows: outRows,
+    };
+  }
+
   async function loadMonthHours(monthKey) {
     if (isDemoMode) { applyMonth(demoMonth(monthKey), monthKey); return; }
 
@@ -1032,6 +1077,18 @@
     state.monthStale = (asked && res.month && res.month !== asked) ? asked : null;
     fillMonthSelect();
     renderHours();
+  }
+
+  async function loadRanking() {
+    if (isDemoMode) { applyRanking(demoRanking()); return; }
+    const res = await Auth.get('getMonthRanking', {});
+    if (!res.ok) return;
+    applyRanking(res);
+  }
+
+  function applyRanking(res) {
+    state.ranking = res;
+    renderRanking();
   }
 
   async function selectWeek(key) {
@@ -1093,6 +1150,51 @@
     } else {
       $('monthHoursSub').textContent =
         `1 日〜${m.throughDay} 日 ・ 上班 ${m.days} 天${m.offDays ? ` ・ 排休 ${m.offDays} 天` : ''}`;
+    }
+  }
+
+  /**
+   * 本月時數排名（05）。姓名・職稱は試算表由来の文字なので必ず esc() を通す
+   * （本週班表の経路で同じ事故が起きたのを塞いだのが直近のコミット e8d60c2。
+   * 名簿の姓名も同じ経路なので、新規に組む HTML はここで同じく逃がす）。
+   */
+  function renderRanking() {
+    const listEl = $('rankList');
+    const subEl = $('rankSub');
+    const noteEl = $('rankNote');
+    if (!listEl || !subEl || !noteEl) return;
+    const r = state.ranking;
+    if (!r) return;
+
+    if (r.note === 'month_sheet_not_found') {
+      listEl.innerHTML = '';
+      subEl.textContent = '';
+      noteEl.textContent = '該月分頁尚未建立';
+      return;
+    }
+
+    const parts = String(r.month || '').split('-').map(Number);
+    subEl.textContent = (parts.length === 2 && parts[1])
+      ? `${parts[1]} 月 ・ 1〜${r.throughDay} 日` : '';
+
+    const medal = { 1: '🥇', 2: '🥈', 3: '🥉' };
+    const maxHours = r.rows.reduce(function (m, row) { return Math.max(m, row.hours); }, 0) || 1;
+    listEl.innerHTML = r.rows.map(function (row) {
+      const pct = Math.max(2, Math.round((row.hours / maxHours) * 100));
+      return `<div class="rank-row${row.isMe ? ' me' : ''}">`
+        + `<span class="rank-no">${medal[row.rank] || row.rank}</span>`
+        + `<span class="rank-name">${esc(row.name)}`
+        + (row.role ? ` <span class="role-chip role ${mapRoleCls(row.role)}">${esc(row.role)}</span>` : '')
+        + `</span>`
+        + `<span class="rank-bar-wrap"><span class="rank-bar" style="width:${pct}%"></span></span>`
+        + `<span class="rank-hours">${row.hours}</span>`
+        + `</div>`;
+    }).join('');
+
+    if (r.myRank == null) {
+      noteEl.textContent = '你是正職，不列入這個排名';
+    } else {
+      noteEl.textContent = `你是 ${r.staffCount} 人中第 ${r.myRank} 名　全員合計 ${r.totalHours} 小時`;
     }
   }
 
@@ -1389,6 +1491,7 @@
     renderDayStrip();
     renderMatrix();
     renderHours();
+    renderRanking();
     updateBar();
   }
 

@@ -381,6 +381,34 @@
     color:var(--paper); background:#3a2e22; border-color:#4d3f30;
   }
 
+  /* ---------- 本月時數排名 ---------- */
+  .rank-list{ display:flex; flex-direction:column; gap:6px; }
+  .rank-row{
+    display:flex; align-items:center; gap:8px;
+    padding:7px 9px; border-radius:9px;
+    background:var(--paper-2); border:1.3px solid var(--line-paper);
+  }
+  .rank-row.me{ border-color:var(--chili); background:#f3e3d6; }
+  .rank-no{
+    flex:0 0 22px; text-align:center;
+    font-family:'DotGothic16', monospace; font-size:13px; color:var(--ink-soft);
+  }
+  .rank-name{
+    flex:0 0 auto; max-width:38%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-size:12px; font-weight:700; color:var(--ink);
+  }
+  .rank-row .role-chip{ font-size:9px; padding:1px 5px; margin-left:2px; }
+  .rank-bar-wrap{
+    flex:1 1 auto; height:8px; border-radius:5px; background:var(--line-paper); overflow:hidden;
+  }
+  .rank-bar{ display:block; height:100%; background:var(--negi); border-radius:5px; }
+  .rank-row.me .rank-bar{ background:var(--chili); }
+  .rank-hours{
+    flex:0 0 42px; text-align:right;
+    font-family:'DotGothic16', monospace; font-size:13px; color:var(--chili-dark);
+  }
+  .rank-note{ font-size:11px; color:var(--ink-soft); margin:8px 2px 0; }
+
   /* ============================================================
    * 管理員頁（admin.html）
    * ========================================================== */

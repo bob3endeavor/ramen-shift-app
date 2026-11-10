@@ -3160,12 +3160,14 @@ function monthHoursData_(who, p) {
 }
 
 /**
- * チップは排班時數の比率で分けているので、職稱に「正職」を**含まない**人を
- * 対象とする（「PT と書いてある人」ではなく）。組長や職稱空欄の人を
- * 取りこぼさないため。正職の表記を変えたら対象が変わる点に注意。
+ * チップは排班時數の比率で分けているので、職稱に「正職」「支援」を
+ * **含まない**人を対象とする（「PT と書いてある人」ではなく）。組長や
+ * 職稱空欄の人を取りこぼさないため。正職・支援の表記を変えたら対象が
+ * 変わる点に注意（支援も店長の指示でチップ対象外）。
  */
 function isTipShareStaff_(role) {
-  return !String(role || '').includes('正職');
+  const r = String(role || '');
+  return !r.includes('正職') && !r.includes('支援');
 }
 
 /**
@@ -3209,7 +3211,7 @@ function rankingExclusionReason_(allRows, who) {
 }
 
 /**
- * 本月時數排名（チップ分配の検証用）。正職を除いた全員が対象。
+ * 本月時數排名（チップ分配の検証用）。正職・支援を除いた全員が対象。
  * monthMinutesByPerson_ を monthHoursData_ と共有しているので、
  * 自分の行の時數は「04 累計已上」の数字と必ず一致する。
  */
@@ -3743,8 +3745,9 @@ function selfTest() {
   eq('PTは対象', isTipShareStaff_('PT'), true);
   eq('內場組長も対象', isTipShareStaff_('內場組長'), true);
   eq('職稱が空でも対象', isTipShareStaff_(''), true);
-  eq('nullでも対象（正職と書いてなければ対象）', isTipShareStaff_(null), true);
+  eq('nullでも対象（正職・支援と書いてなければ対象）', isTipShareStaff_(null), true);
   eq('正職は対象外', isTipShareStaff_('正職'), false);
+  eq('支援は対象外', isTipShareStaff_('支援'), false);
 
   const rankSample = rankRows_([
     { name: '王', role: '', minutes: 100, days: 5 },

@@ -26,7 +26,7 @@
     roster: [],      // [{name, role}]  (= 同事名單，矩陣的行)
     weekErrors: {},  // "YYYY-MM-DD" -> error code
     month: null,     // {hours, days, offDays, month, note, availableMonths}
-    ranking: null,   // {rows, myRank, myExcludedReason, staffCount, totalHours, throughDay, note}（本月時數排名。正職除外）
+    ranking: null,   // {rows, myRank, myExcludedReason, staffCount, totalHours, throughDay, note}（本月時數排名。正職・支援除外）
     monthChoice: null,   // 左のプルダウンで見ている月 'YYYY-MM'
     monthStale: null,    // 後端が月指定に未対応だったとき、頼んだ月
     weekChoice: 'next',  // 右のプルダウン。'next' かその週の月曜 'YYYY-MM-DD'
@@ -1014,13 +1014,14 @@
   }
 
   /**
-   * 示範模式用の「本月時數排名」。DEMO_STAFF から正職を除き、
+   * 示範模式用の「本月時數排名」。DEMO_STAFF から正職・支援を除き、
    * DEMO_MONTH_MINUTES を基準に姓名ごとに決まった値を作る（毎回同じ結果）。
    * DEMO_ME は必ず DEMO_MONTH_MINUTES そのもの —— 04 のデモ数字と一致させるため。
+   * 後端の isTipShareStaff_ と対象が食い違わないよう、フィルタ条件を合わせてある。
    */
   function demoRanking() {
     const rows = DEMO_STAFF
-      .filter(function (s) { return !String(s.role || '').includes('正職'); })
+      .filter(function (s) { const role = String(s.role || ''); return !role.includes('正職') && !role.includes('支援'); })
       .map(function (s, i) {
         const minutes = (s.name === DEMO_ME.name)
           ? DEMO_MONTH_MINUTES
@@ -1200,7 +1201,7 @@
     if (r.myRank == null) {
       noteEl.textContent = (r.myExcludedReason === 'staff_not_found_in_month_sheet')
         ? '該月分頁找不到你的姓名'
-        : '你是正職，不列入這個排名';
+        : '你的職稱不列入小費分配，所以不在這個排名裡';
     } else {
       noteEl.textContent = `你是 ${r.staffCount} 人中第 ${r.myRank} 名　全員合計 ${r.totalHours} 小時`;
     }

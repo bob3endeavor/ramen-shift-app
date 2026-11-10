@@ -50,7 +50,7 @@ const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo?id_token=';
  * 変わらないので、毎回これで確認できるようにしておく）。
  * Code.gs を更新するときは、この値も一緒に上げること。
  */
-const CODE_VERSION = '2026-11-05b confirmed-week + tomorrow-shift-textv2 + shift-time-guard';
+const CODE_VERSION = '2026-11-10 month-ranking';
 
 /* ============================================================
  * Script Properties
@@ -2727,6 +2727,7 @@ function doGet(e) {
     if (action === 'whoami') return handleWhoami_(who);
     if (action === 'getWeek') return handleGetWeek_(who, p);
     if (action === 'getMonthHours') return handleGetMonthHours_(who, p);
+    if (action === 'getMonthRanking') return handleGetMonthRanking_(who, p);
     if (action === 'getConfirmedWeek') return handleGetConfirmedWeek_(who, p);
     if (action === 'getAdminRoster') return handleGetAdminRoster_(who);
     if (action === 'getReminderConfig') return handleGetReminderConfig_(who);
@@ -2767,6 +2768,7 @@ function handleBootstrap_(who, p) {
   if (thisDates.length) out.confirmed = confirmedWeekData_(thisDates);
 
   out.month = monthHoursData_(who, {});
+  out.ranking = monthRankingData_(who, {});
   return jsonOut_(out);
 }
 
@@ -3064,8 +3066,12 @@ function handleGetMonthHours_(who, p) {
   return jsonOut_(monthHoursData_(who, p));
 }
 
-/** handleGetMonthHours_ の中身（bootstrap から同梱するために分けてある） */
-function monthHoursData_(who, p) {
+/**
+ * ?month=YYYY-MM の解釈と「今月は今日まで／過去の月は丸ごと」の規則。
+ * monthHoursData_ と monthRankingData_ の両方がここを通ることで、
+ * 2 つの集計が同じ月・同じ「今日まで」を見ることを保証する。
+ */
+function resolveMonthWindow_(p) {
   const now = new Date();
   let year = now.getFullYear();
   let month = now.getMonth() + 1;
@@ -3083,12 +3089,49 @@ function monthHoursData_(who, p) {
   const lastDay = new Date(year, month, 0).getDate();
   const today = isCurrent ? now.getDate() : lastDay;
 
+  return { year: year, month: month, isCurrent: isCurrent, today: today, lastDay: lastDay };
+}
+
+/**
+ * 月の分頁から、全員ぶんの「今月・throughDay まで」の時數を 1 回の読み取りで作る。
+ * monthHoursData_（自分の 1 件）と monthRankingData_（全員のランキング）が
+ * 同じ関数の上に乗ることで、2 つの数字が食い違わないようにする。
+ */
+function monthMinutesByPerson_(sheet, throughDay) {
+  const people = getRoster_(sheet);
+  if (!people.length) return [];
+
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const rows = sheet.getRange(STAFF_START_ROW, 1, people.length, lastCol).getDisplayValues();
+
+  return people.map(function (person, i) {
+    const rowValues = rows[i];
+    let minutes = 0, days = 0, offDays = 0;
+    for (let c = 0; c < header.length; c++) {
+      const day = Number(header[c]);
+      if (!day || day < 1 || day > throughDay) continue;
+      const shift = parseShiftCell_(rowValues[c]);
+      if (!shift) continue;
+      if (shift.off) { offDays++; continue; }
+      const mins = shiftMinutes_(shift);
+      if (mins > 0) { minutes += mins; days++; }
+    }
+    return { name: person.name, role: person.role, minutes: minutes, days: days, offDays: offDays };
+  });
+}
+
+/** handleGetMonthHours_ の中身（bootstrap から同梱するために分けてある） */
+function monthHoursData_(who, p) {
+  const win = resolveMonthWindow_(p);
+  const year = win.year, month = win.month;
+
   const out = {
     ok: true,
     month: year + '-' + pad2_(month),
-    isCurrentMonth: isCurrent,
+    isCurrentMonth: win.isCurrent,
     availableMonths: availableMonths_(),
-    throughDay: today,
+    throughDay: win.today,
     minutes: 0,
     hours: 0,
     days: 0,
@@ -3099,23 +3142,13 @@ function monthHoursData_(who, p) {
   if (!sheet) {
     out.note = 'month_sheet_not_found';
   } else {
-    const me = getRoster_(sheet).find(function (pp) { return pp.name === who.name; });
+    const me = monthMinutesByPerson_(sheet, win.today).find(function (r) { return r.name === who.name; });
     if (!me) {
       out.note = 'staff_not_found_in_month_sheet';
     } else {
-      const lastCol = sheet.getLastColumn();
-      const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      const rowValues = sheet.getRange(me.row, 1, 1, lastCol).getDisplayValues()[0];
-
-      for (let i = 0; i < header.length; i++) {
-        const day = Number(header[i]);
-        if (!day || day < 1 || day > today) continue;
-        const shift = parseShiftCell_(rowValues[i]);
-        if (!shift) continue;
-        if (shift.off) { out.offDays++; continue; }
-        const mins = shiftMinutes_(shift);
-        if (mins > 0) { out.minutes += mins; out.days++; }
-      }
+      out.minutes = me.minutes;
+      out.days = me.days;
+      out.offDays = me.offDays;
     }
   }
   out.hours = round1_(out.minutes / 60);
@@ -3124,6 +3157,94 @@ function monthHoursData_(who, p) {
     out.nextWeek = weekSubtotal_(who, p.nextWeekDates.split(','));
   }
   return out;
+}
+
+/**
+ * チップは排班時數の比率で分けているので、職稱に「正職」を**含まない**人を
+ * 対象とする（「PT と書いてある人」ではなく）。組長や職稱空欄の人を
+ * 取りこぼさないため。正職の表記を変えたら対象が変わる点に注意。
+ */
+function isTipShareStaff_(role) {
+  return !String(role || '').includes('正職');
+}
+
+/**
+ * [{name, role, minutes, days}] を受けて rank を振る。
+ * minutes の降順、同じなら姓名順。同数は同順位、次は人数ぶん飛ばす（1,2,2,4）。
+ */
+function rankRows_(rows) {
+  const sorted = rows.slice().sort(function (a, b) {
+    if (b.minutes !== a.minutes) return b.minutes - a.minutes;
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  });
+
+  let rank = 0;
+  let prevMinutes = null;
+  return sorted.map(function (row, i) {
+    if (prevMinutes === null || row.minutes !== prevMinutes) {
+      rank = i + 1;
+      prevMinutes = row.minutes;
+    }
+    return Object.assign({}, row, { rank: rank });
+  });
+}
+
+/**
+ * ランキングの 1 行を前端向けに詰め直す。name/role/hours/days/rank/isMe だけ。
+ * getRoster_() の行は email を持っているので、展開して渡さず 1 つずつ詰める
+ * （confirmedWeekData_ が同じ理由で同じことをしている）。
+ */
+function rankingPublicRow_(r, isMe) {
+  return { name: r.name, role: r.role, hours: round1_(r.minutes / 60), days: r.days, rank: r.rank, isMe: isMe };
+}
+
+/**
+ * 本月時數排名（チップ分配の検証用）。正職を除いた全員が対象。
+ * monthMinutesByPerson_ を monthHoursData_ と共有しているので、
+ * 自分の行の時數は「04 累計已上」の数字と必ず一致する。
+ */
+function monthRankingData_(who, p) {
+  const win = resolveMonthWindow_(p);
+  const year = win.year, month = win.month;
+
+  const out = {
+    ok: true,
+    month: year + '-' + pad2_(month),
+    isCurrentMonth: win.isCurrent,
+    throughDay: win.today,
+    totalHours: 0,
+    myRank: null,
+    staffCount: 0,
+    rows: [],
+  };
+
+  const sheet = monthSheet_(year, month);
+  if (!sheet) {
+    out.note = 'month_sheet_not_found';
+    return out;
+  }
+
+  const minutesRows = monthMinutesByPerson_(sheet, win.today)
+    .filter(function (r) { return isTipShareStaff_(r.role); });
+  const ranked = rankRows_(minutesRows);
+
+  let totalMinutes = 0;
+  out.rows = ranked.map(function (r) {
+    totalMinutes += r.minutes;
+    const isMe = r.name === who.name;
+    if (isMe) out.myRank = r.rank;
+    return rankingPublicRow_(r, isMe);
+  });
+  out.staffCount = out.rows.length;
+  out.totalHours = round1_(totalMinutes / 60);
+
+  return out;
+}
+
+/** GET ?action=getMonthRanking */
+function handleGetMonthRanking_(who, p) {
+  if (who.role !== 'employee') return jsonOut_({ ok: false, error: 'employee_only' });
+  return jsonOut_(monthRankingData_(who, p));
 }
 
 /** 指定日期清單的時數小計（跨月份分頁也能加總） */
@@ -3603,6 +3724,31 @@ function selfTest() {
   // 他の同事の画面にそのまま流れる
   eq('タグは通さない', isHHMM_('<img src=x onerror=alert(1)>'), false);
   eq('時刻の後ろにタグが続くものも通さない', isHHMM_('10:30<img src=x>'), false);
+
+  // --- 本月時數排名（チップ分配の検証用）
+  eq('PTは対象', isTipShareStaff_('PT'), true);
+  eq('內場組長も対象', isTipShareStaff_('內場組長'), true);
+  eq('職稱が空でも対象', isTipShareStaff_(''), true);
+  eq('nullでも対象（正職と書いてなければ対象）', isTipShareStaff_(null), true);
+  eq('正職は対象外', isTipShareStaff_('正職'), false);
+
+  const rankSample = rankRows_([
+    { name: '王', role: '', minutes: 100, days: 5 },
+    { name: '李', role: '', minutes: 300, days: 10 },
+    { name: '張', role: '', minutes: 300, days: 10 },
+    { name: '陳', role: '', minutes: 0, days: 0 },
+  ]);
+  eq('時數の多い順（同時數は姓名順）', rankSample[0].name, '張');
+  eq('同時數は同順位', rankSample[1].rank, rankSample[0].rank);
+  eq('同順位の次は人数ぶん飛ぶ', rankSample[2].rank, 3);
+  eq('0時間の人も最後に残る', rankSample[3].name, '陳');
+  eq('0時間の人の順位', rankSample[3].rank, 4);
+  eq('空配列でも落ちない', rankRows_([]).length, 0);
+
+  eq('rowsにemailは入らない（姓名を全員に見せる機能なので漏れの入口になりやすい）',
+    'email' in rankingPublicRow_(
+      { name: '王', role: '', minutes: 60, days: 1, rank: 1, email: 'x@example.com' }, false),
+    false);
 
   const msg = fails.length
     ? '✗ ' + fails.length + ' / ' + checked + ' 項失敗\n' + fails.join('\n')
